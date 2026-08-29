@@ -37,6 +37,9 @@ function mmgrf_get_options() {
         'affiliate_paths'         => 'sportsbook, promo-code, promocode, /betting/, /aff/, ?tag=, utm_campaign=affiliate, /affiliate/, ?affiliate=',
         'affiliate_domain_action' => 'skip_item',
         'affiliate_path_action'   => 'unwrap',
+        // Posts carrying this tag are slideshows: withheld from network
+        // article feeds, served via the {slug}-slideshows routes instead.
+        'slideshow_tag'           => 'slideshow',
     ];
     $saved = get_option( 'mmgrf_options', [] );
     return wp_parse_args( $saved, $defaults );
