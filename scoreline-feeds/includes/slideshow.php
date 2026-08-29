@@ -23,6 +23,19 @@ if ( ! defined( 'ABSPATH' ) ) {
 const MMGRF_SLIDESHOW_MIN_SLIDES = [ 'yahoo' => 3, 'msn' => 4 ]; // yahoo floor is internal quality, msn is Microsoft's rule
 const MMGRF_SLIDESHOW_MAX_SLIDES = 200;
 
+/** MSN promo-card short title: only when over 54 chars, word-boundary cut. */
+function mmgrf_msn_short_title( $title ) {
+    if ( mb_strlen( $title ) <= 54 ) {
+        return '';
+    }
+    $cut = mb_substr( $title, 0, 53 );
+    $sp  = mb_strrpos( $cut, ' ' );
+    if ( $sp !== false && $sp > 20 ) {
+        $cut = mb_substr( $cut, 0, $sp );
+    }
+    return rtrim( $cut, " ,;:-–—" ) . '…';
+}
+
 function mmgrf_slideshow_marker_ids() {
     return mmgrf_tag_slugs_to_ids( mmgrf_get_options()['slideshow_tag'] ?? 'slideshow' );
 }
@@ -65,7 +78,7 @@ function mmgrf_parse_slideshow( $content ) {
             if ( $current ) {
                 $sections[] = $current;
             }
-            $current = [ 'title' => trim( $node->textContent ), 'img' => null, 'text' => '' ];
+            $current = [ 'title' => trim( $node->textContent ), 'img' => null, 'text' => '', 'html' => '' ];
             continue;
         }
         if ( ! $current ) {
@@ -74,7 +87,7 @@ function mmgrf_parse_slideshow( $content ) {
             }
             continue;
         }
-        // Inside a section: first image wins; text accumulates.
+        // Inside a section: first image wins; text and paragraph HTML accumulate.
         if ( $node instanceof DOMElement ) {
             $imgs = $tag === 'img' ? [ $node ] : iterator_to_array( $node->getElementsByTagName( 'img' ) );
             if ( ! $current['img'] && $imgs ) {
@@ -82,6 +95,11 @@ function mmgrf_parse_slideshow( $content ) {
                     'src' => $imgs[0]->getAttribute( 'src' ),
                     'alt' => $imgs[0]->getAttribute( 'alt' ),
                 ];
+            }
+            if ( $tag === 'p' && trim( $node->textContent ) !== '' ) {
+                // MSN's accepted gallery shape carries HTML paragraphs in the
+                // slide description CDATA; keep the markup alongside the text.
+                $current['html'] = ( $current['html'] ?? '' ) . '<p>' . mmgrf_xml( trim( $node->textContent ) ) . '</p>';
             }
         }
         $text = trim( $node->textContent );
@@ -114,9 +132,11 @@ function mmgrf_parse_slideshow( $content ) {
             $image['alt'] = $section['img']['alt'];
         }
         $result['slides'][] = [
-            'title' => $section['title'],
-            'text'  => trim( preg_replace( '/\s+/u', ' ', $section['text'] ) ),
-            'image' => $image,
+            'title'     => $section['title'],
+            'text'      => trim( preg_replace( '/\s+/u', ' ', $section['text'] ) ),
+            'html'      => $section['html'] ?? '',
+            'image'     => $image,
+            'no_rights' => $att_id ? (bool) get_post_meta( $att_id, '_mmgrf_no_syndication_rights', true ) : false,
         ];
     }
     return $result;
@@ -184,9 +204,14 @@ function mmgrf_render_slideshow_feed( $network, $opts ) {
             mmgrf_skip_log_add( $network . '-slideshows', $post_id, $title, $ev['code'], $ev['detail'], 'warn' );
         }
 
-        // Per-slide dimension gate via the shared ladder.
+        // Per-slide dimension gate via the shared ladder. MSN additionally
+        // drops rights-flagged slides (mi:hasSyndicationRights is per-slide).
         $slides = [];
         foreach ( $parsed['slides'] as $slide ) {
+            if ( $network === 'msn' && $slide['no_rights'] ) {
+                mmgrf_skip_log_add( $network . '-slideshows', $post_id, $title, 'no_syndication_rights', '"' . mb_substr( $slide['title'], 0, 60 ) . '": attachment flagged no-syndication-rights — slide dropped', 'warn' );
+                continue;
+            }
             $picked = mmgrf_pick_image_fit( $slide['image'], $min_w, $min_h, $max_b );
             if ( ! $picked ) {
                 mmgrf_skip_log_add( $network . '-slideshows', $post_id, $title, 'slide_below_minimum', '"' . mb_substr( $slide['title'], 0, 60 ) . '": ' . (int) $slide['image']['width'] . 'x' . (int) $slide['image']['height'] . " under {$min_w}px floor — slide dropped", 'warn' );
@@ -229,28 +254,56 @@ function mmgrf_render_slideshow_feed( $network, $opts ) {
         $xml .= '      ' . mmgrf_el( 'title', $title, [], true ) . "\n";
         $xml .= '      ' . mmgrf_el( 'link', $permalink ) . "\n";
         $xml .= '      ' . mmgrf_el( 'pubDate', mmgrf_rfc822( $pub_ts ) ) . "\n";
-        if ( $network === 'msn' && $mod_ts > $pub_ts + MMGRF_MODIFIED_JITTER ) {
-            $xml .= '      ' . mmgrf_el( 'dcterms:modified', gmdate( 'Y-m-d\TH:i:s\Z', $mod_ts ) ) . "\n";
+        if ( $network === 'msn' ) {
+            // Mirrors the live MSN-accepted gallery shape (gamedaychatter):
+            // durable numeric guid, mi:shortTitle, keywords from tags.
+            if ( $mod_ts > $pub_ts + MMGRF_MODIFIED_JITTER ) {
+                $xml .= '      ' . mmgrf_el( 'dcterms:modified', gmdate( 'Y-m-d\TH:i:s\Z', $mod_ts ) ) . "\n";
+            }
+            $xml .= '      <guid isPermaLink="false">' . (int) $post_id . "</guid>\n";
+            $short = mmgrf_msn_short_title( $title );
+            if ( $short !== '' ) {
+                $xml .= '      ' . mmgrf_el( 'mi:shortTitle', $short ) . "\n";
+            }
+        } else {
+            $xml .= '      <guid isPermaLink="true">' . mmgrf_xml( $permalink ) . "</guid>\n";
         }
-        $xml .= '      <guid isPermaLink="true">' . mmgrf_xml( $permalink ) . "</guid>\n";
         $xml .= '      ' . mmgrf_el( 'dc:creator', mmgrf_plain_text( get_the_author_meta( 'display_name', $post->post_author ) ), [], true ) . "\n";
         $xml .= '      ' . mmgrf_el( 'description', mmgrf_plain_text( $desc ), [], true ) . "\n";
         $xml .= '      ' . mmgrf_el( 'category', mmgrf_plain_text( $category ) ) . "\n";
+        if ( $network === 'msn' ) {
+            $post_tags = get_the_tags( $post_id );
+            $keywords  = $post_tags ? array_map( fn( $t ) => $t->name, $post_tags ) : [];
+            if ( $keywords ) {
+                $xml .= '      ' . mmgrf_el( 'media:keywords', implode( ',', $keywords ) ) . "\n";
+            }
+        }
         $xml .= '      <media:thumbnail url="' . mmgrf_xml( $thumb['url'] ) . '" width="' . (int) $thumb['width'] . '" height="' . (int) $thumb['height'] . '"/>' . "\n";
 
         foreach ( $slides as $slide ) {
             $img = $slide['image'];
-            $xml .= '      <media:content url="' . mmgrf_xml( $img['url'] ) . '" type="' . mmgrf_xml( $img['type'] ) . '" medium="image" width="' . (int) $img['width'] . '" height="' . (int) $img['height'] . '">' . "\n";
+            if ( $network === 'msn' ) {
+                $xml .= '      <media:content url="' . mmgrf_xml( $img['url'] ) . '">' . "\n";
+            } else {
+                $xml .= '      <media:content url="' . mmgrf_xml( $img['url'] ) . '" type="' . mmgrf_xml( $img['type'] ) . '" medium="image" width="' . (int) $img['width'] . '" height="' . (int) $img['height'] . '">' . "\n";
+            }
             $xml .= '        ' . mmgrf_el( 'media:title', mmgrf_plain_text( $slide['title'] ) ) . "\n";
             if ( $img['alt'] !== '' ) {
                 $xml .= '        ' . mmgrf_el( 'media:text', mmgrf_plain_text( $img['alt'] ) ) . "\n";
             }
-            if ( $slide['text'] !== '' ) {
-                $xml .= '        ' . mmgrf_el( 'media:description', mmgrf_plain_text( $slide['text'] ) ) . "\n";
-            }
             $credit = ( $img['credit'] ?? '' ) !== '' ? $img['credit'] : ( $img['caption'] ?? '' );
             if ( $credit !== '' ) {
                 $xml .= '        ' . mmgrf_el( 'media:credit', mmgrf_plain_text( $credit ) ) . "\n";
+            }
+            if ( $network === 'msn' ) {
+                if ( $slide['html'] !== '' ) {
+                    $xml .= '        <media:description>' . mmgrf_cdata( $slide['html'] ) . "</media:description>\n";
+                } elseif ( $slide['text'] !== '' ) {
+                    $xml .= '        <media:description>' . mmgrf_cdata( '<p>' . mmgrf_xml( $slide['text'] ) . '</p>' ) . "</media:description>\n";
+                }
+                $xml .= "        <mi:hasSyndicationRights>1</mi:hasSyndicationRights>\n";
+            } elseif ( $slide['text'] !== '' ) {
+                $xml .= '        ' . mmgrf_el( 'media:description', mmgrf_plain_text( $slide['text'] ) ) . "\n";
             }
             $xml .= "      </media:content>\n";
         }

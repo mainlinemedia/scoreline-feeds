@@ -86,11 +86,39 @@ t( 'slideshow: msn requires four surviving slides; three-slide show skipped and 
     expect_eq( mmgrf_skip_log_get()[0]['code'], 'slideshow_too_few_slides' );
 
     mmgrf_test_reset();
-    slideshow_post( 4 );
+    $id = slideshow_post( 4 );
     update_option( 'mmgrf_networks', [ 'msn' => [ 'enabled' => 1 ] ] );
     $xml = mmgrf_render_slideshow_feed( 'msn', mmgrf_slideshow_options( 'msn' ) );
     expect_eq( substr_count( $xml, '<item>' ), 1, 'four slides ships' );
     expect_contains( $xml, 'xmlns:mi=', 'msn namespace present' );
+} );
+
+t( 'slideshow: msn shape mirrors the live MSN-accepted gallery feed', function() {
+    $id = slideshow_post( 4 );
+    mmgrf_test_set_terms( $id, 'post_tag', [ 'golf gear', 'stand bags' ] );
+    update_option( 'mmgrf_networks', [ 'msn' => [ 'enabled' => 1 ] ] );
+    $xml = mmgrf_render_slideshow_feed( 'msn', mmgrf_slideshow_options( 'msn' ) );
+    expect_contains( $xml, '<guid isPermaLink="false">' . $id . '</guid>', 'durable numeric guid per live shape' );
+    expect_eq( substr_count( $xml, '<mi:hasSyndicationRights>1</mi:hasSyndicationRights>' ), 4, 'rights element per slide' );
+    expect_contains( $xml, '<media:keywords>' );
+    expect_contains( $xml, 'golf gear' );
+    expect_match( $xml, '/<media:description><!\[CDATA\[\s*<p>Detail text for slide 1/', 'HTML slide descriptions in CDATA' );
+    expect_true( simplexml_load_string( $xml ) !== false, 'well-formed' );
+} );
+
+t( 'slideshow: msn drops a rights-flagged slide with a warn', function() {
+    $id = slideshow_post( 5 );
+    update_post_meta( 7002, '_mmgrf_no_syndication_rights', '1' ); // slide 2 attachment flagged
+    update_option( 'mmgrf_networks', [ 'msn' => [ 'enabled' => 1 ] ] );
+    $xml = mmgrf_render_slideshow_feed( 'msn', mmgrf_slideshow_options( 'msn' ) );
+    expect_eq( substr_count( $xml, '<media:content' ), 4, 'flagged slide dropped' );
+    expect_not_contains( $xml, 'slide2.jpg' );
+    $codes = array_column( mmgrf_skip_log_get(), 'code' );
+    expect_true( in_array( 'no_syndication_rights', $codes, true ) );
+    // Yahoo has no rights concept in its spec — slide ships there.
+    update_option( 'mmgrf_networks', [ 'yahoo' => [ 'enabled' => 1 ] ] );
+    $y = mmgrf_render_slideshow_feed( 'yahoo', mmgrf_slideshow_options( 'yahoo' ) );
+    expect_contains( $y, 'slide2.jpg' );
 } );
 
 t( 'slideshow: slideshow-tagged posts excluded from article feeds; only they enter slideshow feeds', function() {
