@@ -80,6 +80,18 @@ t( 'r2: not-modified decision honors If-Modified-Since against lastpostmodified'
     expect_false( mmgrf_feed_not_modified( 'not a date', $lastmod ), 'garbage header → full body' );
 } );
 
+// 9. Welcome-kit finding: iframe/embed sources must be HTTPS
+
+t( 'r2: http iframe and embed sources upgraded to https (yahoo and msn)', function() {
+    $y = mmgrf_sanitize( '<iframe src="http://www.youtube.com/embed/x"></iframe><embed src="http://a.com/x.swf" type="application/x">', mmgrf_get_profile( 'yahoo' )->get_sanitizer_rules() );
+    expect_contains( $y['html'], 'src="https://www.youtube.com/embed/x"' );
+    expect_contains( $y['html'], 'src="https://a.com/x.swf"' );
+    expect_not_contains( $y['html'], 'http://' );
+
+    $m = mmgrf_sanitize( '<iframe src="http://www.tiktok.com/embed/v2/1"></iframe>', mmgrf_get_profile( 'msn' )->get_sanitizer_rules() );
+    expect_contains( $m['html'], 'src="https://www.tiktok.com/embed/v2/1"' );
+} );
+
 // 8. GitHub self-updates (native WP Update URI mechanism)
 
 function r2_manifest( $body ) {

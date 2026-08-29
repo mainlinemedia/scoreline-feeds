@@ -3,7 +3,7 @@
  * Plugin Name: Scoreline Feeds
  * Plugin URI:  https://mainlinemediagroup.com
  * Description: Multi-network syndication feeds (Aigeon raw feed, NewsBreak, MSN, Yahoo) with per-network compliance profiles. Replaces both "MMG Raw Feed" v2.x and "NewsBreak RSS Feed" v1.x — deactivate those before activating this.
- * Version:     3.3.0
+ * Version:     3.3.1
  * Author:      Mainline Media Group
  * License:     GPL2
  * Update URI:  https://github.com/mainlinemedia/scoreline-feeds
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'MMGRF_VERSION', '3.3.0' );
+define( 'MMGRF_VERSION', '3.3.1' );
 define( 'MMGRF_DIR', __DIR__ );
 
 require_once MMGRF_DIR . '/includes/emitter.php';
