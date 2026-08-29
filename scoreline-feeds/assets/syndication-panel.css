@@ -1,0 +1,18 @@
+/* Syndication readiness panel — warning-toned, not alarm-toned. */
+#mmgrf-syn-panel .mmgrf-syn-ok {
+	color: #4a5568;
+	margin: 4px 0;
+}
+#mmgrf-syn-panel .mmgrf-syn-warn {
+	background: #fef8ee;
+	border-left: 3px solid #dba617;
+	padding: 6px 8px;
+	margin: 6px 0;
+	color: #50575e;
+	font-size: 12px;
+	line-height: 1.5;
+}
+#mmgrf-syn-panel .mmgrf-syn-muted {
+	color: #8c8f94;
+	font-style: italic;
+}
