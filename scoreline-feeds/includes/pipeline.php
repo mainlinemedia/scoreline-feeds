@@ -430,7 +430,7 @@ function mmgrf_get_feed_output( $network, $filters = [] ) {
         return mmgrf_render_feed( $profile, $opts, $filters );
     }
 
-    $key    = 'mmgrf_feed_' . md5( $network . '|' . $opts['feed_slug'] . '|' . get_lastpostmodified( 'GMT' ) . '|' . MMGRF_VERSION );
+    $key    = 'mmgrf_feed_' . md5( $network . '|' . $opts['feed_slug'] . '|' . mmgrf_feed_lastmod() . '|' . MMGRF_VERSION );
     $cached = get_transient( $key );
     if ( $cached !== false ) {
         return $cached;
@@ -440,9 +440,24 @@ function mmgrf_get_feed_output( $network, $filters = [] ) {
     return $xml;
 }
 
+/**
+ * Feed last-modified moment: latest publish OR latest settings save —
+ * without the config component, a settings change with no new post would
+ * serve 304s (and cached bodies) to partners indefinitely.
+ */
+function mmgrf_feed_lastmod() {
+    $posts = strtotime( get_lastpostmodified( 'GMT' ) . ' UTC' ) ?: 0;
+    return max( $posts, (int) get_option( 'mmgrf_config_touched', 0 ) );
+}
+
+/** Record that feed-affecting configuration changed. */
+function mmgrf_touch_config() {
+    update_option( 'mmgrf_config_touched', time(), 'no' );
+}
+
 /** Shared conditional-GET + cache headers. Returns true when 304 was served. */
 function mmgrf_feed_headers_and_maybe_304() {
-    $lastmod = strtotime( get_lastpostmodified( 'GMT' ) . ' UTC' );
+    $lastmod = mmgrf_feed_lastmod();
     header( 'Content-Type: application/rss+xml; charset=UTF-8' );
     header( 'Cache-Control: no-store, no-cache, must-revalidate, max-age=0' );
     header( 'Pragma: no-cache' );

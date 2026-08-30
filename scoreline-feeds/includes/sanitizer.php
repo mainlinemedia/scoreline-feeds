@@ -309,6 +309,13 @@ function mmgrf_prune_empty_nodes( $html ) {
     if ( trim( (string) $html ) === '' ) {
         return $html;
     }
+    // Fast path: skip the DOM parse entirely when nothing prunable can exist.
+    // Conservative — any <br>, empty attribute, blank element (whitespace or
+    // &nbsp; content) triggers the full pass; a false negative here only
+    // means a cosmetic no-prune, never a wrong prune.
+    if ( ! preg_match( '/<br[\s\/>]|=""|>\s*<\/(p|span|em|strong|b|i|figcaption|li|h[1-6]|ul|ol)>|&nbsp;/i', $html ) ) {
+        return $html;
+    }
     $prev = libxml_use_internal_errors( true );
     $doc  = new DOMDocument( '1.0', 'UTF-8' );
     $doc->loadHTML(

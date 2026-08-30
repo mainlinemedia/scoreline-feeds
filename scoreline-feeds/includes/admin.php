@@ -124,6 +124,7 @@ function mmgrf_sanitize_options( $input ) {
     $clean['affiliate_path_action']   = in_array( $input['affiliate_path_action'] ?? '', [ 'skip_item', 'unwrap', 'strip_paragraph' ], true ) ? $input['affiliate_path_action'] : 'unwrap';
     $clean['enhance_default_feeds'] = empty( $input['enhance_default_feeds'] ) ? 0 : 1;
     set_transient( 'mmgrf_flush_rewrites', 1, 30 );
+    mmgrf_touch_config();
     return $clean;
 }
 
@@ -143,6 +144,7 @@ function mmgrf_sanitize_networks( $input ) {
         ];
     }
     set_transient( 'mmgrf_flush_rewrites', 1, 30 );
+    mmgrf_touch_config();
     return $clean;
 }
 

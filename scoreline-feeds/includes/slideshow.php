@@ -147,6 +147,7 @@ function mmgrf_slideshow_options( $network ) {
     $opts = mmgrf_network_options( $network );
     $opts['feed_slug']  = $opts['feed_slug'] . '-slideshows';
     $opts['feed_url']   = mmgrf_network_feed_url( $opts['feed_slug'] );
+    $opts['feed_title'] = $opts['feed_title'] . ' - Slideshows'; // matches the accepted live-feed convention
     $opts['post_count'] = 20;
     return $opts;
 }
@@ -197,6 +198,10 @@ function mmgrf_render_slideshow_feed( $network, $opts ) {
         setup_postdata( $post );
 
         $title   = mmgrf_plain_text( get_the_title( $post_id ) );
+        if ( trim( $title ) === '' ) {
+            mmgrf_skip_log_add( $network . '-slideshows', $post_id, '(untitled)', 'title_empty' );
+            continue;
+        }
         $content = apply_filters( 'the_content', get_the_content( null, false, $post_id ) );
         $parsed  = mmgrf_parse_slideshow( $content );
 
@@ -240,7 +245,13 @@ function mmgrf_render_slideshow_feed( $network, $opts ) {
         }
 
         // Cover thumbnail: featured image via the ladder; fallback first slide.
+        // MSN rights parity: a rights-flagged featured image is withheld from
+        // the gallery cover exactly as flagged slides are.
         $thumb = mmgrf_resolve_image( $post_id, 'full', '' );
+        if ( $thumb && $network === 'msn' && ! empty( $thumb['no_synd_rights'] ) ) {
+            mmgrf_skip_log_add( 'msn-slideshows', $post_id, $title, 'no_syndication_rights', 'cover attachment flagged no-syndication-rights — first slide used as thumbnail', 'warn' );
+            $thumb = null;
+        }
         $thumb = $thumb ? mmgrf_pick_image_fit( $thumb, $min_w, $min_h, $max_b ) : null;
         if ( ! $thumb ) {
             $thumb = $slides[0]['image'];
@@ -321,7 +332,7 @@ function mmgrf_output_slideshow_feed( $network ) {
         return;
     }
     $opts   = mmgrf_slideshow_options( $network );
-    $key    = 'mmgrf_feed_' . md5( 'slideshow|' . $network . '|' . get_lastpostmodified( 'GMT' ) . '|' . MMGRF_VERSION );
+    $key    = 'mmgrf_feed_' . md5( 'slideshow|' . $network . '|' . mmgrf_feed_lastmod() . '|' . MMGRF_VERSION );
     $cached = get_transient( $key );
     if ( $cached === false ) {
         $cached = mmgrf_render_slideshow_feed( $network, $opts );
