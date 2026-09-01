@@ -187,11 +187,11 @@ class MMGRF_Profile_Yahoo extends MMGRF_Profile_Base {
 
         $out .= '      ' . mmgrf_el( 'content:encoded', $body, [], true ) . "\n";
 
-        // Fix 3: declared alongside the inline lead figure — same asset, with
-        // explicit dimension metadata the inline <img> doesn't carry. Yahoo
-        // treats body embeds as taking precedence, so this is a declared
-        // fallback, never a second image.
-        if ( $img ) {
+        // Media elements are STRICTLY a fallback for bodies with no image.
+        // Fix 3's always-emit was reverted 2026-09-01: Yahoo's portal flags
+        // an inline figure plus a declared media tag of the same asset as
+        // "Duplicate photos" on every item (observed live on easysportz).
+        if ( $img && ! $body_imgs ) {
             $out .= '      <media:content url="' . mmgrf_xml( $img['url'] ) . '" type="' . mmgrf_xml( $img['type'] ) . '" medium="image" width="' . (int) $img['width'] . '" height="' . (int) $img['height'] . '">' . "\n";
             $credit = $img['credit'] !== '' ? $img['credit'] : $img['caption'];
             if ( $credit !== '' ) {

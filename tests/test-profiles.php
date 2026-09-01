@@ -74,14 +74,18 @@ t( 'yahoo: item with affiliate link is rejected when blocklist matches', functio
     expect_contains( $v['reason'], 'affiliate' );
 } );
 
-t( 'yahoo: lead image inlined as first figure with caption; media:content declared alongside (Fix 3)', function() {
+t( 'yahoo: lead figure inlined; NO media elements alongside (Yahoo flags the pair as duplicate photos)', function() {
+    // Live regression evidence 2026-09-01: easysportz Yahoo portal warned
+    // "Duplicate photos" on every item — inline figure + declared media tag
+    // is the same photo twice. Yahoo spec: media:content is a fallback for
+    // bodies with no image, never a companion.
     $p = new MMGRF_Profile_Yahoo();
     $item = $p->prepare_item( mk_item() );
     $xml = $p->render_item( $item, profile_opts() );
     expect_match( $xml, '/<content:encoded><!\[CDATA\[\s*<figure><img src="https:\/\/example-brand\.com\/img\/lead\.jpg"[^>]*alt="Lead alt"/' );
     expect_contains( $xml, '<figcaption>' );
-    expect_contains( $xml, '<media:content url="https://example-brand.com/img/lead.jpg" type="image/jpeg" medium="image" width="1600" height="900">' );
-    expect_contains( $xml, '<media:description>Getty via MMG</media:description>' );
+    expect_not_contains( $xml, '<media:content', 'no duplicate declaration beside the inline figure' );
+    expect_not_contains( $xml, '<media:thumbnail' );
 } );
 
 t( 'yahoo: sub-1280x720 image is dropped from item but item still ships', function() {

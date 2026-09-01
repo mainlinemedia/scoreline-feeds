@@ -128,28 +128,15 @@ t( 'amendment: enhancement callbacks no-op inside a non-core feed (legacy newsbr
 
 // ── Fix 3: media:content always emitted with the lead image ──────
 
-t( 'fix3: exactly one media:content per imaged item; none for imageless; no empty description', function() {
+t( 'fix3 (superseded): media elements are strictly fallback — never beside a body image', function() {
     $p = mmgrf_get_profile( 'yahoo' );
+    // Lead figure injected → no media elements at all.
     $imaged = $p->render_item( $p->prepare_item( mk_item() ), profile_opts() );
-    expect_eq( substr_count( $imaged, '<media:content' ), 1 );
+    expect_eq( substr_count( $imaged, '<media:content' ), 0 );
 
-    $no_credit = mk_item();
-    $no_credit['image']['credit']  = '';
-    $no_credit['image']['caption'] = '';
-    $xml = $p->render_item( $p->prepare_item( $no_credit ), profile_opts() );
-    expect_not_contains( $xml, '<media:description', 'no empty description element' );
-    expect_contains( $xml, '<media:content' );
-
+    // Imageless item → nothing to declare either.
     $imageless = $p->render_item( $p->prepare_item( mk_item( [ 'image' => null ] ) ), profile_opts() );
     expect_not_contains( $imageless, '<media:', 'no empty media elements' );
-} );
-
-t( 'fix3: webp lead image declares image/webp in media:content type', function() {
-    $item = mk_item();
-    $item['image']['url']  = 'https://example-brand.com/img/lead.webp';
-    $item['image']['type'] = 'image/webp';
-    $xml = mmgrf_get_profile( 'yahoo' )->render_item( mmgrf_get_profile( 'yahoo' )->prepare_item( $item ), profile_opts() );
-    expect_contains( $xml, 'type="image/webp"' );
 } );
 
 // ── Fix 9: dimension gate on inline body images (Yahoo) ──────────
