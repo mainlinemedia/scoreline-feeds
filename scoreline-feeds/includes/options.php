@@ -40,6 +40,8 @@ function mmgrf_get_options() {
         // Posts carrying this tag are slideshows: withheld from network
         // article feeds, served via the {slug}-slideshows routes instead.
         'slideshow_tag'           => 'slideshow',
+        // Same pattern for video posts → {slug}-videos routes.
+        'video_tag'               => 'video',
     ];
     $saved = get_option( 'mmgrf_options', [] );
     return wp_parse_args( $saved, $defaults );

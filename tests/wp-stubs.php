@@ -198,6 +198,7 @@ function attachment_url_to_postid( $url ) { return $GLOBALS['mmgrf_test']['url_t
 function wp_get_attachment_metadata( $att_id ) {
     $a = $GLOBALS['mmgrf_test']['attachments'][ $att_id ] ?? null;
     if ( ! $a ) return false;
+    if ( isset( $a['meta'] ) ) return $a['meta']; // raw metadata (video attachments etc.)
     $meta = [];
     if ( isset( $a['fake_filesize'] ) ) $meta['filesize'] = $a['fake_filesize'];
     if ( isset( $a['sizes']['full'] ) ) {

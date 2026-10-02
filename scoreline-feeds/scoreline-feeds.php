@@ -3,7 +3,7 @@
  * Plugin Name: Scoreline Feeds
  * Plugin URI:  https://mainlinemediagroup.com
  * Description: Multi-network syndication feeds (Aigeon raw feed, NewsBreak, MSN, Yahoo) with per-network compliance profiles. Replaces both "MMG Raw Feed" v2.x and "NewsBreak RSS Feed" v1.x — deactivate those before activating this.
- * Version:     3.4.3
+ * Version:     3.5.0
  * Author:      Mainline Media Group
  * License:     GPL2
  * Update URI:  https://github.com/mainlinemedia/scoreline-feeds
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'MMGRF_VERSION', '3.4.3' );
+define( 'MMGRF_VERSION', '3.5.0' );
 define( 'MMGRF_DIR', __DIR__ );
 
 require_once MMGRF_DIR . '/includes/emitter.php';
@@ -32,6 +32,7 @@ require_once MMGRF_DIR . '/includes/admin.php';
 require_once MMGRF_DIR . '/includes/syndication-check.php';
 require_once MMGRF_DIR . '/includes/updater.php';
 require_once MMGRF_DIR . '/includes/slideshow.php';
+require_once MMGRF_DIR . '/includes/video-feed.php';
 
 // ─────────────────────────────────────────────────────────────────
 // FEED REGISTRATION
@@ -89,10 +90,13 @@ function mmgrf_register_all_feeds() {
             mmgrf_output_network_feed( $network );
         } );
 
-        // Slideshow feeds ride the same enable toggle (Yahoo + MSN only).
+        // Slideshow and video feeds ride the same enable toggle (Yahoo + MSN).
         if ( $network === 'yahoo' || $network === 'msn' ) {
             add_feed( $net['slug'] . '-slideshows', function() use ( $network ) {
                 mmgrf_output_slideshow_feed( $network );
+            } );
+            add_feed( $net['slug'] . '-videos', function() use ( $network ) {
+                mmgrf_output_video_feed( $network );
             } );
         }
     }

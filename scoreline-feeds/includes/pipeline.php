@@ -293,8 +293,8 @@ function mmgrf_build_items( $profile, $opts, $filters ) {
     if ( $network !== 'aigeon' ) {
         $cat_out = array_merge( $cat_out, mmgrf_cat_slugs_to_ids( $opts['exclude_networks_cats'] ?? '' ) );
         $tag_out = array_merge( $tag_out, mmgrf_tag_slugs_to_ids( $opts['exclude_networks_tags'] ?? '' ) );
-        // Slideshow posts ship through the slideshow feeds, never as articles.
-        $tag_out = array_merge( $tag_out, mmgrf_slideshow_marker_ids() );
+        // Slideshow and video posts ship through their typed feeds, never as articles.
+        $tag_out = array_merge( $tag_out, mmgrf_slideshow_marker_ids(), mmgrf_video_marker_ids() );
     }
 
     if ( $cat_in )  { $query_args['category__in']     = $cat_in; }
