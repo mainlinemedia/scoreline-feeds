@@ -95,6 +95,8 @@ function mmgrf_register_settings() {
         'affiliate_paths'         => [ 'Affiliate Path Blocklist', 'Comma-separated substrings matched against full link URLs (never body text). Default action unwraps the link, keeping its text.' ],
         'affiliate_domain_action' => [ 'Domain Match Action', 'skip_item (default), unwrap, or strip_paragraph.' ],
         'affiliate_path_action'   => [ 'Path Match Action', 'unwrap (default), skip_item, or strip_paragraph.' ],
+        'slideshow_tag'           => [ 'Slideshow Marker Tag', 'Posts with this tag ship via the {slug}-slideshows feeds and are withheld from article feeds. Change it here if this site already uses the tag editorially.' ],
+        'video_tag'               => [ 'Video Marker Tag', 'Posts with this tag ship via the {slug}-videos feeds and are withheld from article feeds.' ],
     ];
     foreach ( $fields_filter as $key => [ $label, $desc ] ) {
         add_settings_field( 'mmgrf_' . $key, $label, 'mmgrf_field_cb', 'scoreline-feeds', 'mmgrf_filter', [ 'key' => $key, 'desc' => $desc ] );
@@ -122,6 +124,8 @@ function mmgrf_sanitize_options( $input ) {
     $clean['affiliate_paths']         = sanitize_text_field( $input['affiliate_paths'] ?? $defaults['affiliate_paths'] );
     $clean['affiliate_domain_action'] = in_array( $input['affiliate_domain_action'] ?? '', [ 'skip_item', 'unwrap', 'strip_paragraph' ], true ) ? $input['affiliate_domain_action'] : 'skip_item';
     $clean['affiliate_path_action']   = in_array( $input['affiliate_path_action'] ?? '', [ 'skip_item', 'unwrap', 'strip_paragraph' ], true ) ? $input['affiliate_path_action'] : 'unwrap';
+    $clean['slideshow_tag']           = sanitize_title( $input['slideshow_tag'] ?? 'slideshow' ) ?: 'slideshow';
+    $clean['video_tag']               = sanitize_title( $input['video_tag'] ?? 'video' ) ?: 'video';
     $clean['enhance_default_feeds'] = empty( $input['enhance_default_feeds'] ) ? 0 : 1;
     set_transient( 'mmgrf_flush_rewrites', 1, 30 );
     mmgrf_touch_config();
@@ -276,6 +280,9 @@ function mmgrf_settings_page() {
                         <td>
                             <input type="text" name="mmgrf_networks[<?php echo esc_attr( $key ); ?>][slug]" value="<?php echo esc_attr( $net['slug'] ); ?>" class="regular-text">
                             <p class="description">URLs: <code><?php echo esc_html( $qs_url ); ?></code> and <code><?php echo esc_html( $pretty_url ); ?></code><?php echo $key === 'msn' ? ' — give MSN the pretty form.' : ''; ?></p>
+                            <?php if ( $key === 'yahoo' || $key === 'msn' ) : ?>
+                            <p class="description">Typed feeds: slideshows <code><?php echo esc_html( home_url( '/feed/' . rawurlencode( $net['slug'] ) . '-slideshows/' ) ); ?></code> · videos <code><?php echo esc_html( home_url( '/feed/' . rawurlencode( $net['slug'] ) . '-videos/' ) ); ?></code> (register each as its content type with the partner).</p>
+                            <?php endif; ?>
                         </td>
                     </tr>
                     <tr>

@@ -120,6 +120,82 @@ t( 'video: video-tagged posts excluded from article feeds and vice versa', funct
     expect_not_contains( $video_xml, 'A Regular Article' );
 } );
 
+// ── Audit round (2026-10-02): V1-V5 ──────────────────────────────
+
+t( 'audit-V1: data-src lazy attribute never mistaken for the video source', function() {
+    $id = video_post( [], false );
+    video_attachment( 7700, 'https://example-brand.com/up/real.mp4' );
+    $GLOBALS['mmgrf_test']['posts'][ $id ]->post_content =
+        '<video controls data-src="https://cdn.lazy.com/placeholder.mp4" src="https://example-brand.com/up/real.mp4"></video>';
+    $v = mmgrf_resolve_post_video( $id, get_post( $id )->post_content );
+    expect_eq( $v['url'], 'https://example-brand.com/up/real.mp4' );
+    // and when ONLY data-src exists, nothing resolves
+    $v2 = mmgrf_resolve_post_video( $id, '<video controls data-src="https://cdn.lazy.com/x.mp4"></video>' );
+    expect_eq( $v2, null );
+} );
+
+t( 'audit-V2: vertical clip accepts a vertical 720x1280 thumbnail', function() {
+    $id = video_post( [], false, false );
+    video_attachment( 7701, 'https://example-brand.com/up/short.mp4', 'video/mp4', [ 'width' => 1080, 'height' => 1920 ] );
+    $GLOBALS['mmgrf_test']['posts'][ $id ]->post_content .= '<video src="https://example-brand.com/up/short.mp4"></video>';
+    mmgrf_test_add_attachment( 7702, [ 'full' => [ 'https://example-brand.com/up/vert-thumb.jpg', 720, 1280 ] ] );
+    $GLOBALS['mmgrf_test']['posts'][ $id ]->thumbnail_id = 7702;
+    update_option( 'mmgrf_networks', [ 'yahoo' => [ 'enabled' => 1 ] ] );
+    $xml = mmgrf_render_video_feed( 'yahoo', mmgrf_video_options( 'yahoo' ) );
+    expect_eq( substr_count( $xml, '<item>' ), 1, 'vertical thumb accepted for vertical video' );
+    expect_contains( $xml, 'vert-thumb.jpg' );
+} );
+
+t( 'audit-V3: video file missing from local disk withholds the item with video_file_missing', function() {
+    $dir = sys_get_temp_dir() . '/mmgrf-vid-' . getmypid() . '-' . mt_rand();
+    mkdir( $dir ); // dir exists, file does not
+    $id = video_post( [], false );
+    video_attachment( 7703, 'https://example-brand.com/up/ghost.mp4' );
+    $GLOBALS['mmgrf_test']['attachments'][7703]['file'] = "$dir/ghost.mp4";
+    $GLOBALS['mmgrf_test']['posts'][ $id ]->post_content .= '<video src="https://example-brand.com/up/ghost.mp4"></video>';
+    update_option( 'mmgrf_networks', [ 'yahoo' => [ 'enabled' => 1 ] ] );
+    $xml = mmgrf_render_video_feed( 'yahoo', mmgrf_video_options( 'yahoo' ) );
+    expect_eq( substr_count( $xml, '<item>' ), 0, 'never advertise a dead video URL' );
+    expect_eq( mmgrf_skip_log_get()[0]['code'], 'video_file_missing' );
+} );
+
+t( 'audit-V4: unknown duration ships with a warn; disk filesize recovered', function() {
+    $dir = sys_get_temp_dir() . '/mmgrf-vid-' . getmypid() . '-' . mt_rand();
+    mkdir( $dir );
+    file_put_contents( "$dir/clip.mp4", str_repeat( 'x', 4096 ) );
+    $id = video_post( [], false );
+    video_attachment( 7704, 'https://example-brand.com/up/noduration.mp4', 'video/mp4', [ 'length' => 0, 'filesize' => 0, 'width' => 1920, 'height' => 1080 ] );
+    $GLOBALS['mmgrf_test']['attachments'][7704]['file'] = "$dir/clip.mp4";
+    $GLOBALS['mmgrf_test']['posts'][ $id ]->post_content .= '<video src="https://example-brand.com/up/noduration.mp4"></video>';
+    update_option( 'mmgrf_networks', [ 'yahoo' => [ 'enabled' => 1 ] ] );
+    $xml = mmgrf_render_video_feed( 'yahoo', mmgrf_video_options( 'yahoo' ) );
+    expect_eq( substr_count( $xml, '<item>' ), 1, 'ships without duration' );
+    expect_contains( $xml, 'fileSize="4096"', 'filesize recovered from disk' );
+    $log = mmgrf_skip_log_get();
+    expect_eq( $log[0]['code'], 'video_duration_unknown' );
+    expect_eq( $log[0]['level'], 'warn' );
+} );
+
+t( 'audit-V5: video poster attribute serves as thumbnail fallback', function() {
+    $id = video_post( [], false, false ); // no featured image
+    video_attachment( 7705, 'https://example-brand.com/up/pclip.mp4' );
+    mmgrf_test_add_attachment( 7706, [ 'full' => [ 'https://example-brand.com/up/poster.jpg', 1920, 1080 ] ] );
+    $GLOBALS['mmgrf_test']['url_to_attachment']['https://example-brand.com/up/poster.jpg'] = 7706;
+    $GLOBALS['mmgrf_test']['posts'][ $id ]->post_content .=
+        '<video controls poster="https://example-brand.com/up/poster.jpg" src="https://example-brand.com/up/pclip.mp4"></video>';
+    update_option( 'mmgrf_networks', [ 'yahoo' => [ 'enabled' => 1 ] ] );
+    $xml = mmgrf_render_video_feed( 'yahoo', mmgrf_video_options( 'yahoo' ) );
+    expect_eq( substr_count( $xml, '<item>' ), 1, 'poster rescues the missing featured image' );
+    expect_contains( $xml, '<media:thumbnail url="https://example-brand.com/up/poster.jpg"' );
+} );
+
+t( 'audit-V7: msn video items carry attribution copyright', function() {
+    video_post();
+    update_option( 'mmgrf_networks', [ 'msn' => [ 'enabled' => 1 ] ] );
+    $xml = mmgrf_render_video_feed( 'msn', mmgrf_video_options( 'msn' ) );
+    expect_contains( $xml, '<media:copyright>' );
+} );
+
 t( 'video: routes register when networks enabled', function() {
     update_option( 'mmgrf_networks', [ 'yahoo' => [ 'enabled' => 1 ], 'msn' => [ 'enabled' => 1 ] ] );
     mmgrf_register_all_feeds();

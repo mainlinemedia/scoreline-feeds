@@ -33,7 +33,8 @@ function mmgrf_video_marker_ids() {
  * Returns null, or ['url','mime','duration','width','height','filesize','attachment_id'].
  */
 function mmgrf_resolve_post_video( $post_id, $content ) {
-    if ( ! preg_match( '/<(?:video|source)[^>]+src=["\']([^"\']+)["\']/i', (string) $content, $m ) ) {
+    // \s boundary before src= so lazy-load data-src never matches (audit V1).
+    if ( ! preg_match( '/<(?:video|source)\b[^>]*\ssrc=["\']([^"\']+)["\']/i', (string) $content, $m ) ) {
         return null;
     }
     $url    = $m[1];
@@ -46,14 +47,30 @@ function mmgrf_resolve_post_video( $post_id, $content ) {
     }
     $meta = $att_id ? wp_get_attachment_metadata( $att_id ) : [];
     $meta = is_array( $meta ) ? $meta : [];
+
+    $file  = $att_id ? get_attached_file( $att_id ) : false;
+    $bytes = (int) ( $meta['filesize'] ?? 0 );
+    if ( ! $bytes && $file && file_exists( $file ) ) {
+        $bytes = filesize( $file ); // disk fallback (audit V4)
+    }
+    // Never advertise a dead video URL — a partner's multi-hundred-MB fetch
+    // failing is the image "didn't download" lesson at scale (audit V3).
+    // Enforced only when the upload directory is local (offloaded exempt).
+    $file_missing = $file && is_dir( dirname( $file ) ) && ! file_exists( $file );
+
+    // The block's poster attribute is a thumbnail fallback (audit V5).
+    $poster = preg_match( '/<video\b[^>]*\sposter=["\']([^"\']+)["\']/i', (string) $content, $pm ) ? $pm[1] : '';
+
     return [
         'url'           => $url,
         'mime'          => $mime,
         'duration'      => (int) ( $meta['length'] ?? 0 ),
         'width'         => (int) ( $meta['width'] ?? 0 ),
         'height'        => (int) ( $meta['height'] ?? 0 ),
-        'filesize'      => (int) ( $meta['filesize'] ?? 0 ),
+        'filesize'      => $bytes,
         'attachment_id' => $att_id,
+        'file_missing'  => $file_missing,
+        'poster'        => $poster,
     ];
 }
 
@@ -126,6 +143,13 @@ function mmgrf_render_video_feed( $network, $opts ) {
             mmgrf_skip_log_add( $log, $post_id, $title, 'video_format_unsupported', $video['mime'] . ' — networks accept MP4/H.264 or MOV video; audio-only podcasts cannot syndicate here' );
             continue;
         }
+        if ( ! empty( $video['file_missing'] ) ) {
+            mmgrf_skip_log_add( $log, $post_id, $title, 'video_file_missing', 'attachment ' . (int) $video['attachment_id'] . ' — video file missing on disk; re-upload before this item can syndicate' );
+            continue;
+        }
+        if ( $video['duration'] <= 0 ) {
+            mmgrf_skip_log_add( $log, $post_id, $title, 'video_duration_unknown', 'no duration in attachment metadata (API side-load?) — shipped without it; MSN prefers duration', 'warn' );
+        }
 
         $pub_ts = (int) get_post_time( 'U', true, $post_id );
         $mod_ts = (int) get_post_modified_time( 'U', true, $post_id );
@@ -139,11 +163,30 @@ function mmgrf_render_video_feed( $network, $opts ) {
             continue;
         }
 
-        // Thumbnail is REQUIRED for video on both networks.
-        $thumb = mmgrf_resolve_image( $post_id, 'full', '' );
-        $thumb = $thumb ? mmgrf_pick_image_fit( $thumb, 1280, 720, 5242880 ) : null;
+        // Thumbnail is REQUIRED for video on both networks. Vertical clips
+        // accept a vertical 720x1280 thumbnail per Yahoo's video spec
+        // (audit V2); the poster attribute is the fallback when no featured
+        // image fits (audit V5).
+        $vertical = $video['height'] > $video['width'] && $video['width'] > 0;
+        $pick_thumb = function( $img ) use ( $vertical ) {
+            if ( ! $img ) {
+                return null;
+            }
+            $picked = mmgrf_pick_image_fit( $img, 1280, 720, 5242880 );
+            if ( ! $picked && $vertical ) {
+                $picked = mmgrf_pick_image_fit( $img, 720, 1280, 5242880 );
+            }
+            return $picked;
+        };
+        $thumb = $pick_thumb( mmgrf_resolve_image( $post_id, 'full', '' ) );
+        if ( ! $thumb && $video['poster'] !== '' ) {
+            $poster_att = mmgrf_url_to_attachment( mmgrf_strip_size_suffix( $video['poster'] ) ) ?: mmgrf_url_to_attachment( $video['poster'] );
+            if ( $poster_att ) {
+                $thumb = $pick_thumb( mmgrf_attachment_image_data( $poster_att, 'full' ) );
+            }
+        }
         if ( ! $thumb ) {
-            mmgrf_skip_log_add( $log, $post_id, $title, 'no_featured_image', 'video items require a thumbnail >= 1280x720' );
+            mmgrf_skip_log_add( $log, $post_id, $title, 'no_featured_image', 'video items require a thumbnail (1280x720, or 720x1280 for vertical clips)' );
             continue;
         }
 
@@ -195,6 +238,10 @@ function mmgrf_render_video_feed( $network, $opts ) {
         }
         $xml .= '      <media:content' . $vattrs . "/>\n";
         $xml .= '      <media:thumbnail url="' . mmgrf_xml( $thumb['url'] ) . '" width="' . (int) $thumb['width'] . '" height="' . (int) $thumb['height'] . '"/>' . "\n";
+        if ( $network === 'msn' ) {
+            // MSN requires attribution (copyright information) for video.
+            $xml .= '      <media:copyright>© ' . gmdate( 'Y', $pub_ts ) . ' ' . mmgrf_xml( mmgrf_plain_text( get_bloginfo( 'name' ) ) ) . "</media:copyright>\n";
+        }
         $xml .= "    </item>\n";
     }
     wp_reset_postdata();
