@@ -213,10 +213,14 @@ function mmgrf_render_video_feed( $network, $opts ) {
         $xml .= '      ' . mmgrf_el( 'title', $title, [], true ) . "\n";
         $xml .= '      ' . mmgrf_el( 'link', $permalink ) . "\n";
         $xml .= '      ' . mmgrf_el( 'pubDate', mmgrf_rfc822( $pub_ts ) ) . "\n";
-        if ( $mod_ts > $pub_ts + MMGRF_MODIFIED_JITTER ) {
-            $xml .= $network === 'msn'
-                ? '      ' . mmgrf_el( 'dcterms:modified', gmdate( 'Y-m-d\TH:i:s\Z', $mod_ts ) ) . "\n"
-                : '      ' . mmgrf_el( 'updated', mmgrf_rfc822( $mod_ts ) ) . "\n";
+        if ( $network === 'msn' ) {
+            if ( $mod_ts > $pub_ts + MMGRF_MODIFIED_JITTER ) {
+                $xml .= '      ' . mmgrf_el( 'dcterms:modified', gmdate( 'Y-m-d\TH:i:s\Z', $mod_ts ) ) . "\n";
+            }
+        } else {
+            // Yahoo's video spec lists <updated> as a required item element
+            // (unlike articles, where unnecessary churn is penalized).
+            $xml .= '      ' . mmgrf_el( 'updated', mmgrf_rfc822( max( $mod_ts, $pub_ts ) ) ) . "\n";
         }
         $xml .= '      <guid isPermaLink="true">' . mmgrf_xml( $permalink ) . "</guid>\n";
         $xml .= '      ' . mmgrf_el( 'dc:creator', mmgrf_plain_text( get_the_author_meta( 'display_name', $post->post_author ) ), [], true ) . "\n";

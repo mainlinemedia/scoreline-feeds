@@ -31,6 +31,28 @@ function slideshow_post( $sections = 5, $over = [] ) {
     return $id;
 }
 
+t( 'audit4-A: cover fallback never duplicates slide-1 URL when an alternate rendition fits', function() {
+    // No featured image; slide 1 has a 2048 rendition the cover can use.
+    $id = slideshow_post( 4 );
+    $GLOBALS['mmgrf_test']['posts'][ $id ]->thumbnail_id = 0;
+    $GLOBALS['mmgrf_test']['attachments'][7001]['sizes']['2048x2048'] = [ 'https://example-brand.com/up/slide1-2048x1365.jpg', 2048, 1365 ];
+    update_option( 'mmgrf_networks', [ 'yahoo' => [ 'enabled' => 1 ] ] );
+    $xml = mmgrf_render_slideshow_feed( 'yahoo', mmgrf_slideshow_options( 'yahoo' ) );
+    expect_contains( $xml, '<media:thumbnail url="https://example-brand.com/up/slide1-2048x1365.jpg"', 'alternate rendition as cover' );
+    expect_eq( substr_count( $xml, 'https://example-brand.com/up/slide1.jpg' ), 1, 'slide URL listed exactly once' );
+    expect_eq( count( mmgrf_skip_log_get() ), 0 );
+} );
+
+t( 'audit4-A: when no alternate rendition fits, same-URL cover ships with a warn', function() {
+    $id = slideshow_post( 4 ); // slides only have under-floor large candidates
+    $GLOBALS['mmgrf_test']['posts'][ $id ]->thumbnail_id = 0;
+    update_option( 'mmgrf_networks', [ 'yahoo' => [ 'enabled' => 1 ] ] );
+    $xml = mmgrf_render_slideshow_feed( 'yahoo', mmgrf_slideshow_options( 'yahoo' ) );
+    expect_eq( substr_count( $xml, '<item>' ), 1, 'show still ships (thumbnail is required)' );
+    $codes = array_column( mmgrf_skip_log_get(), 'code' );
+    expect_true( in_array( 'thumbnail_duplicates_slide', $codes, true ), 'duplication made visible' );
+} );
+
 t( 'slideshow: parser extracts H2+image sections with titles, text, images', function() {
     $id = slideshow_post( 3 );
     $content = get_post( $id )->post_content;

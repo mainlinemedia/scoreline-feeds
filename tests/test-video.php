@@ -196,6 +196,13 @@ t( 'audit-V7: msn video items carry attribution copyright', function() {
     expect_contains( $xml, '<media:copyright>' );
 } );
 
+t( 'audit4-B: yahoo video items always carry updated (required by the video spec)', function() {
+    video_post(); // unmodified post
+    update_option( 'mmgrf_networks', [ 'yahoo' => [ 'enabled' => 1 ] ] );
+    $xml = mmgrf_render_video_feed( 'yahoo', mmgrf_video_options( 'yahoo' ) );
+    expect_contains( $xml, '<updated>', 'updated present even when never modified' );
+} );
+
 t( 'video: routes register when networks enabled', function() {
     update_option( 'mmgrf_networks', [ 'yahoo' => [ 'enabled' => 1 ], 'msn' => [ 'enabled' => 1 ] ] );
     mmgrf_register_all_feeds();

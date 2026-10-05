@@ -31,7 +31,9 @@ t( 'r3-F2: rights-flagged cover falls back to first slide on msn gallery', funct
     update_option( 'mmgrf_networks', [ 'msn' => [ 'enabled' => 1 ] ] );
     $xml = mmgrf_render_slideshow_feed( 'msn', mmgrf_slideshow_options( 'msn' ) );
     expect_not_contains( $xml, 'cover.jpg', 'flagged cover withheld' );
-    expect_contains( $xml, '<media:thumbnail url="https://example-brand.com/up/slide1.jpg"', 'first slide used' );
+    // audit4-A refinement: fallback uses an ALTERNATE rendition of slide 1,
+    // never the identical URL the slide already declares.
+    expect_contains( $xml, '<media:thumbnail url="https://example-brand.com/up/slide1-1024x683.jpg"', 'slide-1 alternate rendition used' );
     // Yahoo has no rights concept — cover ships there.
     update_option( 'mmgrf_networks', [ 'yahoo' => [ 'enabled' => 1 ] ] );
     expect_contains( mmgrf_render_slideshow_feed( 'yahoo', mmgrf_slideshow_options( 'yahoo' ) ), 'cover.jpg' );

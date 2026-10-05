@@ -254,7 +254,24 @@ function mmgrf_render_slideshow_feed( $network, $opts ) {
         }
         $thumb = $thumb ? mmgrf_pick_image_fit( $thumb, $min_w, $min_h, $max_b ) : null;
         if ( ! $thumb ) {
-            $thumb = $slides[0]['image'];
+            // Fallback to slide 1 — but never at the SAME URL the slide
+            // declares: Yahoo flags per-item duplicate image URLs ("each
+            // image URL listed only once"). Prefer an alternate rendition.
+            $s0 = $slides[0]['image'];
+            foreach ( $s0['candidates'] ?? [] as $c ) {
+                if ( $c['url'] === $s0['url'] ) {
+                    continue;
+                }
+                $alt = array_merge( $s0, [ 'url' => $c['url'], 'width' => (int) $c['width'], 'height' => (int) $c['height'], 'filesize' => 0, 'candidates' => [] ] );
+                if ( mmgrf_pick_image_fit( $alt, $min_w, $min_h, $max_b ) ) {
+                    $thumb = $alt;
+                    break;
+                }
+            }
+            if ( ! $thumb ) {
+                $thumb = $s0; // thumbnail is required — lesser evil, made visible
+                mmgrf_skip_log_add( $network . '-slideshows', $post_id, $title, 'thumbnail_duplicates_slide', 'no featured image and no alternate rendition — cover reuses slide-1 URL; set a featured image to clear this', 'warn' );
+            }
         }
 
         $categories = get_the_category( $post_id );
