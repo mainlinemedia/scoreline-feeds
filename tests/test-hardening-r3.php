@@ -20,6 +20,22 @@ t( 'r3-F1: settings change rotates cache key and defeats stale 304s', function()
     );
 } );
 
+t( 'rewrites self-heal: slug-set change flushes once; stable config never re-flushes', function() {
+    // rockytopinsider 2026-10-05: /feed/newsbreak/ 404'd (host resets 404s)
+    // because rewrites were never flushed after enabling the network.
+    update_option( 'mmgrf_networks', [ 'newsbreak' => [ 'enabled' => 1 ] ] );
+    mmgrf_register_all_feeds();
+    $after_first = $GLOBALS['mmgrf_test']['flush_count'] ?? 0;
+    expect_true( $after_first >= 1, 'first registration flushes' );
+
+    mmgrf_register_all_feeds(); // same config → no flush churn
+    expect_eq( $GLOBALS['mmgrf_test']['flush_count'], $after_first, 'stable config does not re-flush' );
+
+    update_option( 'mmgrf_networks', [ 'newsbreak' => [ 'enabled' => 1 ], 'yahoo' => [ 'enabled' => 1 ] ] );
+    mmgrf_register_all_feeds();
+    expect_true( $GLOBALS['mmgrf_test']['flush_count'] > $after_first, 'toggle change flushes again' );
+} );
+
 t( 'r3-F1: sanitize_options records the config touch', function() {
     mmgrf_sanitize_options( [ 'feed_slug' => 'raw-feed' ] );
     expect_true( (int) get_option( 'mmgrf_config_touched', 0 ) > 0 );

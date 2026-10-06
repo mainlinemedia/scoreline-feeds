@@ -3,7 +3,7 @@
  * Plugin Name: Scoreline Feeds
  * Plugin URI:  https://mainlinemediagroup.com
  * Description: Multi-network syndication feeds (Aigeon raw feed, NewsBreak, MSN, Yahoo) with per-network compliance profiles. Replaces both "MMG Raw Feed" v2.x and "NewsBreak RSS Feed" v1.x — deactivate those before activating this.
- * Version:     3.5.2
+ * Version:     3.5.3
  * Author:      Mainline Media Group
  * License:     GPL2
  * Update URI:  https://github.com/mainlinemedia/scoreline-feeds
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'MMGRF_VERSION', '3.5.2' );
+define( 'MMGRF_VERSION', '3.5.3' );
 define( 'MMGRF_DIR', __DIR__ );
 
 require_once MMGRF_DIR . '/includes/emitter.php';
@@ -104,6 +104,33 @@ function mmgrf_register_all_feeds() {
     if ( get_transient( 'mmgrf_flush_rewrites' ) ) {
         flush_rewrite_rules( false );
         delete_transient( 'mmgrf_flush_rewrites' );
+    }
+
+    // Self-healing rewrites: whenever the set of feed routes this plugin
+    // registers changes (fresh install, toggle flipped, slug edited, site
+    // cloned from staging), flush once automatically. Pretty feed URLs
+    // 404ing until someone remembers Settings → Permalinks → Save has now
+    // bitten two production sites (liveforever, rockytopinsider).
+    $slugs = [ $opts['feed_slug'] . '-raw-feed' ];
+    foreach ( mmgrf_get_tag_feeds() as $tf ) {
+        if ( ! empty( $tf['slug'] ) ) {
+            $slugs[] = $tf['slug'] . '-raw-feed';
+        }
+    }
+    foreach ( mmgrf_get_network_config() as $network => $net ) {
+        if ( ! empty( $net['enabled'] ) ) {
+            $slugs[] = $net['slug'];
+            if ( $network === 'yahoo' || $network === 'msn' ) {
+                $slugs[] = $net['slug'] . '-slideshows';
+                $slugs[] = $net['slug'] . '-videos';
+            }
+        }
+    }
+    sort( $slugs );
+    $sig = md5( implode( '|', $slugs ) );
+    if ( get_option( 'mmgrf_rewrite_sig' ) !== $sig ) {
+        flush_rewrite_rules( false );
+        update_option( 'mmgrf_rewrite_sig', $sig, 'no' );
     }
 }
 

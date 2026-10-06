@@ -239,7 +239,7 @@ function remove_filter( $hook, $cb, $prio = 10 ) {
 function add_feed( $slug, $cb ) { $GLOBALS['mmgrf_test']['feeds'][ $slug ] = $cb; }
 function register_activation_hook( $file, $cb ) {}
 function register_deactivation_hook( $file, $cb ) {}
-function flush_rewrite_rules( $hard = true ) {}
+function flush_rewrite_rules( $hard = true ) { $GLOBALS['mmgrf_test']['flush_count'] = ( $GLOBALS['mmgrf_test']['flush_count'] ?? 0 ) + 1; }
 function feed_content_type( $type ) { return 'application/rss+xml'; }
 function setup_postdata( $post ) { $GLOBALS['mmgrf_test']['current_post'] = is_object( $post ) ? $post->ID : $post; return true; }
 function wp_reset_postdata() { $GLOBALS['mmgrf_test']['current_post'] = null; $GLOBALS['post'] = null; }
