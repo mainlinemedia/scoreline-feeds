@@ -10,11 +10,20 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 const MMGRF_NETWORKS = [ 'newsbreak', 'msn', 'yahoo' ];
 
+/** Networks that take separate slideshow and video feeds. */
+const MMGRF_TYPED_NETWORKS = [ 'yahoo', 'msn' ];
+
+/** Core feed names a custom feed slug must never shadow (add_feed() replaces the core handler). */
+const MMGRF_RESERVED_SLUGS = [ 'feed', 'rdf', 'rss', 'rss2', 'atom', 'comments-rss2' ];
+
 function mmgrf_get_options() {
     $defaults = [
         'feed_slug'             => 'raw-feed',
-        'feed_title'            => get_bloginfo( 'name' ),
-        'feed_description'      => get_bloginfo( 'description' ),
+        // WordPress stores the site name and tagline entity-encoded
+        // ("Bob&#039;s Sports &amp; More"); the emitter escapes on the way
+        // out, so decode here or the channel title ships double-escaped.
+        'feed_title'            => mmgrf_site_text( 'name' ),
+        'feed_description'      => mmgrf_site_text( 'description' ),
         'feed_link'             => home_url(),
         'utm_source'            => 'feed',
         'utm_medium'            => 'email',
@@ -42,21 +51,55 @@ function mmgrf_get_options() {
         'slideshow_tag'           => 'slideshow',
         // Same pattern for video posts → {slug}-videos routes.
         'video_tag'               => 'video',
+        // Seconds a just-published post is held back from network feeds
+        // (see mmgrf_settle_seconds). 0 disables.
+        'settle_seconds'          => 60,
     ];
     $saved = get_option( 'mmgrf_options', [] );
-    return wp_parse_args( $saved, $defaults );
+    return wp_parse_args( is_array( $saved ) ? $saved : [], $defaults );
+}
+
+/** Site name/tagline as plain text (decoded from WordPress's stored entities). */
+function mmgrf_site_text( $field ) {
+    return trim( html_entity_decode( (string) get_bloginfo( $field ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
 }
 
 function mmgrf_get_tag_feeds() {
-    return get_option( 'mmgrf_tag_feeds', [] );
+    $feeds = get_option( 'mmgrf_tag_feeds', [] );
+    return is_array( $feeds ) ? $feeds : [];
+}
+
+/**
+ * Every feed slug this plugin serves, from stored options: the legacy main
+ * feed, tag feeds, enabled networks and their typed feeds.
+ */
+function mmgrf_registered_feed_slugs() {
+    $slugs = [ mmgrf_get_options()['feed_slug'] . '-raw-feed' ];
+    foreach ( mmgrf_get_tag_feeds() as $tf ) {
+        if ( ! empty( $tf['slug'] ) ) {
+            $slugs[] = $tf['slug'] . '-raw-feed';
+        }
+    }
+    foreach ( mmgrf_get_network_config() as $network => $net ) {
+        if ( empty( $net['enabled'] ) ) {
+            continue;
+        }
+        $slugs[] = $net['slug'];
+        if ( in_array( $network, MMGRF_TYPED_NETWORKS, true ) ) {
+            $slugs[] = $net['slug'] . '-slideshows';
+            $slugs[] = $net['slug'] . '-videos';
+        }
+    }
+    return array_values( array_unique( $slugs ) );
 }
 
 /** Per-network stored config, merged with defaults. */
 function mmgrf_get_network_config() {
     $saved  = get_option( 'mmgrf_networks', [] );
+    $saved  = is_array( $saved ) ? $saved : [];
     $config = [];
     foreach ( MMGRF_NETWORKS as $key ) {
-        $config[ $key ] = wp_parse_args( $saved[ $key ] ?? [], [
+        $config[ $key ] = wp_parse_args( is_array( $saved[ $key ] ?? null ) ? $saved[ $key ] : [], [
             'enabled'     => false,
             'slug'        => $key,
             'post_count'  => 0,   // 0 = profile default
@@ -80,10 +123,10 @@ function mmgrf_network_options( $network ) {
     // option → site tagline → site name; never empty.
     $description = trim( (string) $base['feed_description'] );
     if ( $description === '' ) {
-        $description = trim( (string) get_bloginfo( 'description' ) );
+        $description = mmgrf_site_text( 'description' );
     }
     if ( $description === '' ) {
-        $description = (string) get_bloginfo( 'name' );
+        $description = mmgrf_site_text( 'name' );
     }
 
     $opts = [

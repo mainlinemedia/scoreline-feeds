@@ -16,9 +16,10 @@ t( 'msn: default image size is full (recommended 1280x720 floor)', function() {
 } );
 
 t( 'coexistence: with legacy NewsBreak plugin active, v3 defers on default-feed enhancement and the newsbreak slug', function() {
-    if ( ! class_exists( 'NewsBreak_RSS_Feed' ) ) {
-        eval( 'class NewsBreak_RSS_Feed {}' ); // simulate the standalone plugin being active
-    }
+    // Simulate the standalone plugin being active — via the filter, never by
+    // declaring the class (a class cannot be un-declared, which made every
+    // later test depend on file order).
+    add_filter( 'mmgrf_legacy_newsbreak_active', '__return_true' );
     update_option( 'mmgrf_options', [ 'enhance_default_feeds' => 1 ] );
     mmgrf_register_default_feed_enhancement();
     expect_false( isset( $GLOBALS['mmgrf_test']['actions']['rss2_ns'] ), 'no double enhancement while legacy plugin owns /feed/' );

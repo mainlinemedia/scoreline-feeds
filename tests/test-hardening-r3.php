@@ -24,16 +24,15 @@ t( 'rewrites self-heal: slug-set change flushes once; stable config never re-flu
     // rockytopinsider 2026-10-05: /feed/newsbreak/ 404'd (host resets 404s)
     // because rewrites were never flushed after enabling the network.
     update_option( 'mmgrf_networks', [ 'newsbreak' => [ 'enabled' => 1 ] ] );
-    mmgrf_register_all_feeds();
-    $after_first = $GLOBALS['mmgrf_test']['flush_count'] ?? 0;
-    expect_true( $after_first >= 1, 'first registration flushes' );
+    mmgrf_heal_rewrites();
+    expect_eq( $GLOBALS['mmgrf_test']['flush_count'], 1, 'first registration flushes' );
 
-    mmgrf_register_all_feeds(); // same config → no flush churn
-    expect_eq( $GLOBALS['mmgrf_test']['flush_count'], $after_first, 'stable config does not re-flush' );
+    mmgrf_heal_rewrites(); // same config -> no flush churn
+    expect_eq( $GLOBALS['mmgrf_test']['flush_count'], 1, 'stable config does not re-flush' );
 
     update_option( 'mmgrf_networks', [ 'newsbreak' => [ 'enabled' => 1 ], 'yahoo' => [ 'enabled' => 1 ] ] );
-    mmgrf_register_all_feeds();
-    expect_true( $GLOBALS['mmgrf_test']['flush_count'] > $after_first, 'toggle change flushes again' );
+    mmgrf_heal_rewrites();
+    expect_eq( $GLOBALS['mmgrf_test']['flush_count'], 2, 'toggle change flushes again' );
 } );
 
 t( 'r3-F1: sanitize_options records the config touch', function() {

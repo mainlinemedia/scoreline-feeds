@@ -180,7 +180,7 @@ function mmgrf_render_video_feed( $network, $opts ) {
         };
         $thumb = $pick_thumb( mmgrf_resolve_image( $post_id, 'full', '' ) );
         if ( ! $thumb && $video['poster'] !== '' ) {
-            $poster_att = mmgrf_url_to_attachment( mmgrf_strip_size_suffix( $video['poster'] ) ) ?: mmgrf_url_to_attachment( $video['poster'] );
+            $poster_att = mmgrf_find_attachment( $video['poster'] );
             if ( $poster_att ) {
                 $thumb = $pick_thumb( mmgrf_attachment_image_data( $poster_att, 'full' ) );
             }

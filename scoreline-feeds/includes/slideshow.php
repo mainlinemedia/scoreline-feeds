@@ -118,10 +118,7 @@ function mmgrf_parse_slideshow( $content ) {
             continue;
         }
         $src    = $section['img']['src'];
-        $att_id = mmgrf_url_to_attachment( mmgrf_strip_size_suffix( $src ) );
-        if ( ! $att_id ) {
-            $att_id = mmgrf_url_to_attachment( $src );
-        }
+        $att_id = mmgrf_find_attachment( $src );
         $image = $att_id ? mmgrf_attachment_image_data( $att_id, 'full' ) : null;
         if ( ! $image ) {
             // External/hotlinked: keep the URL, mark dims unknown — gates decide.

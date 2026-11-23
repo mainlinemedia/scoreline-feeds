@@ -31,7 +31,18 @@ function mmgrf_test_reset() {
         'options' => [], 'transients' => [], 'posts' => [], 'meta' => [],
         'attachments' => [], 'terms' => [], 'post_terms' => [], 'feeds' => [],
         'current_post' => null, 'file_dims' => [], 'url_to_attachment' => [], 'actions' => [], 'filters' => [],
+        'sticky' => [], 'term_children' => [], 'logged_in' => false, 'last_query_args' => null,
+        'query_vars' => [], 'option_writes' => [], 'authors' => [],
+        'upload_baseurl' => null, 'remote' => [], 'current_user_id' => 1, 'caps' => null,
+        'status_header' => null, 'headers' => [], 'flush_count' => 0,
     ] );
+    // Request-scoped plugin state must not leak between tests.
+    unset( $GLOBALS['wp'], $GLOBALS['post'] );
+    $GLOBALS['mmgrf_url_memo']         = [];
+    $GLOBALS['mmgrf_find_memo']        = [];
+    $GLOBALS['mmgrf_skip_log_pending'] = [];
+    $GLOBALS['mmgrf_skip_log_depth']   = 0;
+    $_SERVER['HTTP_IF_MODIFIED_SINCE'] = '';
     $GLOBALS['mmgrf_test']['home_url'] = $keep;
     $GLOBALS['mmgrf_test']['blog'] = [ 'name' => 'Example Brand', 'description' => 'Example description', 'language' => 'en-US', 'charset' => 'UTF-8' ];
 }
@@ -51,6 +62,7 @@ function mmgrf_test_add_post( $args = [] ) {
         'post_date_gmt' => '2026-08-01 12:00:00',
         'post_modified_gmt' => '2026-08-01 12:00:00',
         'post_name'     => 'test-post-' . $id,
+        'post_password' => '',
         'thumbnail_id'  => 0,
     ], $args );
     $GLOBALS['mmgrf_test']['posts'][ $id ] = $post;
@@ -88,7 +100,15 @@ function wp_parse_args( $args, $defaults ) { return array_merge( $defaults, (arr
 
 // ── Options / transients ─────────────────────────────────────────
 function get_option( $k, $default = false ) { return $GLOBALS['mmgrf_test']['options'][ $k ] ?? $default; }
-function update_option( $k, $v ) { $GLOBALS['mmgrf_test']['options'][ $k ] = $v; return true; }
+function update_option( $k, $v, $autoload = null ) {
+    // Real WP: an unchanged value is a no-op that returns false (no DB write).
+    if ( array_key_exists( $k, $GLOBALS['mmgrf_test']['options'] ) && $GLOBALS['mmgrf_test']['options'][ $k ] === $v ) {
+        return false;
+    }
+    $GLOBALS['mmgrf_test']['options'][ $k ] = $v;
+    $GLOBALS['mmgrf_test']['option_writes'][ $k ] = ( $GLOBALS['mmgrf_test']['option_writes'][ $k ] ?? 0 ) + 1;
+    return true;
+}
 function delete_option( $k ) { unset( $GLOBALS['mmgrf_test']['options'][ $k ] ); return true; }
 function get_transient( $k ) { return $GLOBALS['mmgrf_test']['transients'][ $k ] ?? false; }
 function set_transient( $k, $v, $ttl = 0 ) { $GLOBALS['mmgrf_test']['transients'][ $k ] = $v; return true; }
@@ -114,7 +134,16 @@ function get_post_meta( $post_id, $key, $single = false ) {
 function update_post_meta( $post_id, $key, $value ) { $GLOBALS['mmgrf_test']['meta'][ $post_id ][ $key ] = $value; return true; }
 function delete_post_meta( $post_id, $key ) { unset( $GLOBALS['mmgrf_test']['meta'][ $post_id ][ $key ] ); return true; }
 function get_the_title( $post_id ) { $p = get_post( is_object( $post_id ) ? $post_id->ID : $post_id ); return $p ? $p->post_title : ''; }
-function get_the_content( $more_link = null, $strip_teaser = false, $post_id = 0 ) { $p = get_post( $post_id ); return $p ? $p->post_content : ''; }
+function post_password_required( $post = null ) { $p = is_object( $post ) ? $post : get_post( $post ); return $p && ( $p->post_password ?? '' ) !== ''; }
+function get_the_content( $more_link = null, $strip_teaser = false, $post_id = 0 ) {
+    $p = get_post( is_object( $post_id ) ? $post_id->ID : $post_id );
+    if ( ! $p ) return '';
+    // Real WP: a password-protected post yields the password form, and a
+    // paginated post yields only the current page (page 1 in a feed).
+    if ( post_password_required( $p ) ) return '<form class="post-password-form"><p>This content is password protected.</p></form>';
+    $pages = explode( '<!--nextpage-->', $p->post_content );
+    return $pages[0];
+}
 function has_excerpt( $post_id ) { $p = get_post( $post_id ); return $p && $p->post_excerpt !== ''; }
 function get_the_excerpt( $post_id ) { $p = get_post( is_object( $post_id ) ? $post_id->ID : $post_id ); return $p ? $p->post_excerpt : ''; }
 function get_post_time( $format, $gmt = false, $post_id = null ) {
@@ -143,7 +172,14 @@ function get_lastpostmodified( $tz = 'GMT' ) {
     }
     return $max ?: gmdate( 'Y-m-d H:i:s' );
 }
-function get_the_author_meta( $field, $user_id ) { return 'Author ' . $user_id; }
+function get_the_author_meta( $field, $user_id ) { return $GLOBALS['mmgrf_test']['authors'][ $user_id ] ?? ( 'Author ' . $user_id ); }
+/** Real WP: display name of the global post's author, through the the_author filter (byline plugins hook it). */
+function get_the_author() {
+    $p = get_post( $GLOBALS['mmgrf_test']['current_post'] );
+    return apply_filters( 'the_author', $p ? get_the_author_meta( 'display_name', $p->post_author ) : '' );
+}
+function is_user_logged_in() { return ! empty( $GLOBALS['mmgrf_test']['logged_in'] ); }
+function get_term_children( $term_id, $taxonomy ) { return $GLOBALS['mmgrf_test']['term_children'][ $term_id ] ?? []; }
 
 function mmgrf_test_set_terms( $post_id, $taxonomy, $names ) {
     foreach ( $names as $name ) {
@@ -194,7 +230,15 @@ function wp_get_attachment_image_url( $att_id, $size ) { $s = wp_get_attachment_
 function get_post_mime_type( $att_id ) { return $GLOBALS['mmgrf_test']['attachments'][ $att_id ]['mime'] ?? false; }
 function get_attached_file( $att_id ) { return $GLOBALS['mmgrf_test']['attachments'][ $att_id ]['file'] ?? false; }
 function wp_getimagesize( $path ) { return $GLOBALS['mmgrf_test']['file_dims'][ $path ] ?? false; }
-function attachment_url_to_postid( $url ) { return $GLOBALS['mmgrf_test']['url_to_attachment'][ $url ] ?? 0; }
+function attachment_url_to_postid( $url ) {
+    $GLOBALS['mmgrf_test']['url_lookups'] = ( $GLOBALS['mmgrf_test']['url_lookups'] ?? 0 ) + 1;
+    return $GLOBALS['mmgrf_test']['url_to_attachment'][ $url ] ?? 0;
+}
+/** Uploads base URL. Default: the web root of the fixture site (so every same-host fixture URL is "an upload"). */
+function wp_get_upload_dir() {
+    $base = $GLOBALS['mmgrf_test']['upload_baseurl'] ?? rtrim( $GLOBALS['mmgrf_test']['home_url'], '/' );
+    return [ 'baseurl' => $base, 'basedir' => sys_get_temp_dir(), 'error' => false ];
+}
 function wp_get_attachment_metadata( $att_id ) {
     $a = $GLOBALS['mmgrf_test']['attachments'][ $att_id ] ?? null;
     if ( ! $a ) return false;
@@ -236,6 +280,9 @@ function remove_filter( $hook, $cb, $prio = 10 ) {
     }
     return true;
 }
+function __return_true() { return true; }
+function __return_false() { return false; }
+function __return_empty_string() { return ''; }
 function add_feed( $slug, $cb ) { $GLOBALS['mmgrf_test']['feeds'][ $slug ] = $cb; }
 function register_activation_hook( $file, $cb ) {}
 function register_deactivation_hook( $file, $cb ) {}
@@ -246,7 +293,10 @@ function wp_reset_postdata() { $GLOBALS['mmgrf_test']['current_post'] = null; $G
 function get_the_ID() { return $GLOBALS['mmgrf_test']['current_post']; }
 function is_admin() { return false; }
 function wp_date( $format, $ts ) { return gmdate( $format, $ts ); }
-function current_user_can( $cap ) { return true; }
+function current_user_can( $cap, ...$args ) {
+    $caps = $GLOBALS['mmgrf_test']['caps'] ?? null;
+    return $caps === null ? true : in_array( $cap, $caps, true );
+}
 function get_current_user_id() { return $GLOBALS['mmgrf_test']['current_user_id'] ?? 1; }
 function get_query_var( $var, $default = '' ) { return $GLOBALS['mmgrf_test']['query_vars'][ $var ] ?? $default; }
 function is_feed() { return ( $GLOBALS['mmgrf_test']['query_vars']['feed'] ?? '' ) !== ''; }
@@ -262,8 +312,16 @@ class WP_Query {
     public $posts = [];
     private $idx = 0;
     public function __construct( $args = [] ) {
+        $GLOBALS['mmgrf_test']['last_query_args'] = $args;
         $all = array_values( $GLOBALS['mmgrf_test']['posts'] );
         $all = array_filter( $all, fn( $p ) => $p->post_status === 'publish' && $p->post_type === ( $args['post_type'] ?? 'post' ) );
+        $published = $all;
+        if ( isset( $args['has_password'] ) && $args['has_password'] === false ) {
+            $all = array_filter( $all, fn( $p ) => ( $p->post_password ?? '' ) === '' );
+        }
+        if ( isset( $args['post__in'] ) && $args['post__in'] ) {
+            $all = array_filter( $all, fn( $p ) => in_array( $p->ID, $args['post__in'], true ) );
+        }
         $terms_of = function( $p, $tax ) {
             $slugs = $GLOBALS['mmgrf_test']['post_terms'][ $p->ID ][ $tax ] ?? [];
             return array_map( fn( $s ) => $GLOBALS['mmgrf_test']['terms'][ $tax ][ $s ]->term_id, $slugs );
@@ -280,6 +338,21 @@ class WP_Query {
         }
         usort( $all, fn( $a, $b ) => strcmp( $b->post_date_gmt, $a->post_date_gmt ) );
         $this->posts = array_slice( array_values( $all ), 0, $args['posts_per_page'] ?? 10 );
+        // Real WP_Query::get_posts(): a query with no include-type archive arg
+        // is "home", and on home sticky posts are moved/prepended — fetched
+        // by a bare post__in query that IGNORES the tax NOT IN clauses and
+        // the posts_per_page cap — unless ignore_sticky_posts is set.
+        $is_home = empty( $args['category__in'] ) && empty( $args['tag__in'] ) && empty( $args['post__in'] );
+        if ( $is_home && empty( $args['ignore_sticky_posts'] ) && ! empty( $GLOBALS['mmgrf_test']['sticky'] ) ) {
+            $front = [];
+            foreach ( $published as $p ) {
+                if ( in_array( $p->ID, $GLOBALS['mmgrf_test']['sticky'], true ) ) {
+                    $front[] = $p;
+                }
+            }
+            $ids = array_map( fn( $p ) => $p->ID, $front );
+            $this->posts = array_merge( $front, array_values( array_filter( $this->posts, fn( $p ) => ! in_array( $p->ID, $ids, true ) ) ) );
+        }
     }
     public function have_posts() { return $this->idx < count( $this->posts ); }
     public function the_post() { $GLOBALS['post'] = $this->posts[ $this->idx ]; setup_postdata( $this->posts[ $this->idx ] ); $this->idx++; }

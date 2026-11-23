@@ -247,10 +247,7 @@ function mmgrf_gate_inline_images( $html, $min_w, $min_h, $max_bytes ) {
         if ( $src === '' ) {
             continue;
         }
-        $att_id = mmgrf_url_to_attachment( mmgrf_strip_size_suffix( $src ) );
-        if ( ! $att_id ) {
-            $att_id = mmgrf_url_to_attachment( $src );
-        }
+        $att_id = mmgrf_find_attachment( $src );
         if ( ! $att_id ) {
             $result['events'][] = [ 'code' => 'inline_image_unresolvable', 'detail' => $src . ' — external or hotlinked, size unverifiable' ];
             continue;

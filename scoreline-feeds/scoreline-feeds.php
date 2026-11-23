@@ -40,6 +40,11 @@ require_once MMGRF_DIR . '/includes/video-feed.php';
 // back-compat contract (§6). Network routes register only when enabled.
 // ─────────────────────────────────────────────────────────────────
 
+/** Is the standalone "NewsBreak RSS Feed" plugin (which this one replaces) still active? */
+function mmgrf_legacy_newsbreak_active() {
+    return (bool) apply_filters( 'mmgrf_legacy_newsbreak_active', class_exists( 'NewsBreak_RSS_Feed' ) );
+}
+
 add_action( 'init', 'mmgrf_register_all_feeds' );
 function mmgrf_register_all_feeds() {
 
@@ -83,7 +88,7 @@ function mmgrf_register_all_feeds() {
         // owns ?feed=newsbreak, don't fight it for the route. Validate the v3
         // output on a parallel slug (e.g. newsbreak-v3), then retire the old
         // plugin and switch the slug back.
-        if ( $net['slug'] === 'newsbreak' && class_exists( 'NewsBreak_RSS_Feed' ) ) {
+        if ( $net['slug'] === 'newsbreak' && mmgrf_legacy_newsbreak_active() ) {
             continue;
         }
         add_feed( $net['slug'], function() use ( $network ) {
@@ -91,7 +96,7 @@ function mmgrf_register_all_feeds() {
         } );
 
         // Slideshow and video feeds ride the same enable toggle (Yahoo + MSN).
-        if ( $network === 'yahoo' || $network === 'msn' ) {
+        if ( in_array( $network, MMGRF_TYPED_NETWORKS, true ) ) {
             add_feed( $net['slug'] . '-slideshows', function() use ( $network ) {
                 mmgrf_output_slideshow_feed( $network );
             } );
@@ -100,38 +105,31 @@ function mmgrf_register_all_feeds() {
             } );
         }
     }
+}
 
-    if ( get_transient( 'mmgrf_flush_rewrites' ) ) {
-        flush_rewrite_rules( false );
-        delete_transient( 'mmgrf_flush_rewrites' );
-    }
-
-    // Self-healing rewrites: whenever the set of feed routes this plugin
-    // registers changes (fresh install, toggle flipped, slug edited, site
-    // cloned from staging), flush once automatically. Pretty feed URLs
-    // 404ing until someone remembers Settings → Permalinks → Save has now
-    // bitten two production sites (liveforever, rockytopinsider).
-    $slugs = [ $opts['feed_slug'] . '-raw-feed' ];
-    foreach ( mmgrf_get_tag_feeds() as $tf ) {
-        if ( ! empty( $tf['slug'] ) ) {
-            $slugs[] = $tf['slug'] . '-raw-feed';
-        }
-    }
-    foreach ( mmgrf_get_network_config() as $network => $net ) {
-        if ( ! empty( $net['enabled'] ) ) {
-            $slugs[] = $net['slug'];
-            if ( $network === 'yahoo' || $network === 'msn' ) {
-                $slugs[] = $net['slug'] . '-slideshows';
-                $slugs[] = $net['slug'] . '-videos';
-            }
-        }
-    }
+/**
+ * Self-healing rewrites: whenever the set of feed routes this plugin
+ * registers changes (fresh install, toggle flipped, slug edited, site cloned
+ * from staging), flush once automatically. Pretty feed URLs 404ing until
+ * someone remembers Settings → Permalinks → Save has bitten two production
+ * sites (liveforever, rockytopinsider).
+ *
+ * Runs on wp_loaded, not init: a flush requested during init is only
+ * QUEUED by core until wp_loaded, so recording "healed" at init would stick
+ * even if the request died before the rules were actually rebuilt. The
+ * signature is autoloaded so the check costs no query on normal page views.
+ */
+add_action( 'wp_loaded', 'mmgrf_heal_rewrites' );
+function mmgrf_heal_rewrites() {
+    $slugs = mmgrf_registered_feed_slugs();
     sort( $slugs );
     $sig = md5( implode( '|', $slugs ) );
-    if ( get_option( 'mmgrf_rewrite_sig' ) !== $sig ) {
-        flush_rewrite_rules( false );
-        update_option( 'mmgrf_rewrite_sig', $sig, 'no' );
+    if ( get_option( 'mmgrf_routes_sig' ) === $sig ) {
+        return;
     }
+    flush_rewrite_rules( false );
+    update_option( 'mmgrf_routes_sig', $sig, true );
+    delete_option( 'mmgrf_rewrite_sig' ); // pre-3.6 name (was not autoloaded)
 }
 
 /** Variant used by tag feeds where options are pre-resolved. */
@@ -142,6 +140,22 @@ function mmgrf_output_network_feed_with_opts( $network, $opts, $filters = [] ) {
     echo mmgrf_render_feed( mmgrf_get_profile( $network ), $opts, $filters );
 }
 
+/**
+ * A network feed must never be served from a request that is not asking for
+ * it: custom feed slugs also answer at the site root (/yahoo/), so guard the
+ * requirements once, loudly, instead of failing inside a render.
+ */
+function mmgrf_missing_requirements() {
+    $missing = [];
+    if ( ! class_exists( 'DOMDocument' ) ) {
+        $missing[] = 'the PHP "dom" extension';
+    }
+    if ( ! function_exists( 'mb_substr' ) || ! function_exists( 'mb_strrpos' ) ) {
+        $missing[] = 'the PHP "mbstring" extension';
+    }
+    return $missing;
+}
+
 // ─────────────────────────────────────────────────────────────────
 // DEFAULT-FEED ENHANCEMENT (ported from NewsBreak RSS Feed v1.3.0)
 // The standalone plugin silently enhanced /feed/ output; consumers may
@@ -150,7 +164,7 @@ function mmgrf_output_network_feed_with_opts( $network, $opts, $filters = [] ) {
 
 add_action( 'init', 'mmgrf_register_default_feed_enhancement', 2 );
 function mmgrf_register_default_feed_enhancement() {
-    if ( class_exists( 'NewsBreak_RSS_Feed' ) ) {
+    if ( mmgrf_legacy_newsbreak_active() ) {
         return; // the standalone plugin already enhances /feed/ — never double up
     }
     $opts = mmgrf_get_options();
