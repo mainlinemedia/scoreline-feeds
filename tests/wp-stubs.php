@@ -226,6 +226,13 @@ function wp_remote_get( $url, $args = [] ) { return $GLOBALS['mmgrf_test']['remo
 function wp_remote_retrieve_body( $resp ) { return is_array( $resp ) ? ( $resp['body'] ?? '' ) : ''; }
 function is_wp_error( $x ) { return $x instanceof WP_Error; }
 class WP_Error { public $msg; public function __construct( $c = '', $m = '' ) { $this->msg = $m; } }
+function wp_get_attachment_url( $att_id ) {
+    $a = $GLOBALS['mmgrf_test']['attachments'][ $att_id ] ?? null;
+    if ( ! $a ) return false;
+    if ( ! empty( $a['url'] ) ) return $a['url'];
+    $s = $a['sizes']['full'] ?? ( $a['sizes'] ? reset( $a['sizes'] ) : null );
+    return $s ? $s[0] : false;
+}
 function wp_get_attachment_image_url( $att_id, $size ) { $s = wp_get_attachment_image_src( $att_id, $size ); return $s ? $s[0] : false; }
 function get_post_mime_type( $att_id ) { return $GLOBALS['mmgrf_test']['attachments'][ $att_id ]['mime'] ?? false; }
 function get_attached_file( $att_id ) { return $GLOBALS['mmgrf_test']['attachments'][ $att_id ]['file'] ?? false; }

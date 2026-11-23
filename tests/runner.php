@@ -38,6 +38,30 @@ function expect_match( $haystack, $pattern, $label = '' ) {
     }
 }
 
+/**
+ * Strict well-formedness: zero libxml errors. (simplexml_load_string() !== false
+ * was the old oracle — it happily returns an object for a document with
+ * undeclared namespace prefixes.)
+ */
+function expect_well_formed( $xml, $label = '' ) {
+    $prev = libxml_use_internal_errors( true );
+    libxml_clear_errors();
+    $doc = new DOMDocument();
+    $doc->loadXML( (string) $xml );
+    $errors = array_map( fn( $e ) => trim( $e->message ) . ' (line ' . $e->line . ')', libxml_get_errors() );
+    libxml_clear_errors();
+    libxml_use_internal_errors( $prev );
+    if ( $errors ) {
+        throw new MMGRF_AssertFail( ( $label ? "$label: " : '' ) . 'XML is not well-formed: ' . implode( '; ', array_slice( $errors, 0, 3 ) ) );
+    }
+}
+
+/** Every <img src> and media url inside one <item> block, in order. */
+function item_image_urls( $item_xml ) {
+    preg_match_all( '/<img\b[^>]*?\ssrc="([^"]+)"|<media:(?:content|thumbnail)\b[^>]*?\surl="([^"]+)"/i', (string) $item_xml, $m, PREG_SET_ORDER );
+    return array_map( fn( $x ) => html_entity_decode( $x[1] !== '' ? $x[1] : $x[2] ), $m );
+}
+
 function run_all_tests() {
     $r = &$GLOBALS['mmgrf_runner'];
     foreach ( $r['tests'] as [ $name, $fn ] ) {

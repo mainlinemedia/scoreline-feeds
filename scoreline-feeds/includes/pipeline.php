@@ -82,9 +82,13 @@ function mmgrf_strip_markup( $value ) {
     return $out ?? $value;
 }
 
-/** A WordPress-stored string as clean plain text: no tags, entities decoded once. */
+/**
+ * A WordPress-stored string as clean plain text: no tags, entities decoded
+ * once, and nothing XML forbids (decoding "&#12;" manufactures a raw form
+ * feed; a Latin-1 byte from a wire import breaks every later /u regex).
+ */
 function mmgrf_text_field( $value ) {
-    return trim( mmgrf_plain_text( mmgrf_strip_markup( $value ) ) );
+    return trim( mmgrf_xml_chars( mmgrf_plain_text( mmgrf_strip_markup( mmgrf_utf8( $value ) ) ) ) );
 }
 
 function mmgrf_get_score( $post_id ) {
@@ -246,11 +250,23 @@ function mmgrf_url_to_attachment( $url ) {
  * on its own it misses every rendition of an upload wider than 2560px (stored
  * as photo-scaled.jpg while renditions are photo-1024x683.jpg) and anything
  * served from another host. URLs outside the uploads tree cost no query.
+ *
+ * $hint_id: an attachment ID suggested by the markup (wp-image-{id}).
  */
-function mmgrf_find_attachment( $url ) {
+function mmgrf_find_attachment( $url, $hint_id = 0 ) {
     $url = html_entity_decode( trim( (string) $url ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
     if ( $url === '' ) {
         return 0;
+    }
+    // A wp-image-{id} class is a free answer — but content pasted from
+    // another site carries foreign IDs, so it is trusted only when that
+    // attachment's own file is the same photo.
+    if ( $hint_id > 0 ) {
+        $own = wp_get_attachment_url( $hint_id );
+        if ( $own && mmgrf_image_identity( $own ) === mmgrf_image_identity( $url ) ) {
+            $GLOBALS['mmgrf_find_memo'][ $url ] = (int) $hint_id;
+            return (int) $hint_id;
+        }
     }
     if ( isset( $GLOBALS['mmgrf_find_memo'][ $url ] ) ) {
         return $GLOBALS['mmgrf_find_memo'][ $url ];
@@ -619,7 +635,9 @@ function mmgrf_build_item( $post, $network, $opts, $hold = 0 ) {
     $GLOBALS['post'] = $post;
     setup_postdata( $post );
 
-    $content = mmgrf_rendered_post_content( $post, $network );
+    // Scrubbed once here: an invalid byte would make every later /u regex
+    // (excerpt, word counts) fail outright.
+    $content = mmgrf_utf8( mmgrf_rendered_post_content( $post, $network ) );
 
     if ( has_excerpt( $post_id ) ) {
         $excerpt = mmgrf_text_field( get_the_excerpt( $post_id ) );
@@ -633,7 +651,7 @@ function mmgrf_build_item( $post, $network, $opts, $hold = 0 ) {
         $lede    = preg_replace( '#<(figure|figcaption|script|style|noscript|iframe)\b[^>]*>.*?</\1\s*>#is', ' ', $content ) ?? $content;
         $lede    = wp_strip_all_tags( str_replace( '<', ' <', $lede ) );
         $lede    = preg_replace( '/\s+/u', ' ', $lede ) ?? $lede;
-        $excerpt = mmgrf_plain_text( wp_trim_words( trim( $lede ), 55, '…' ) );
+        $excerpt = mmgrf_xml_chars( mmgrf_plain_text( wp_trim_words( trim( $lede ), 55, '…' ) ) );
     }
 
     $categories = get_the_category( $post_id );

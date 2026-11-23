@@ -71,8 +71,20 @@ class MMGRF_Profile_NewsBreak extends MMGRF_Profile_Base {
         if ( ! empty( $item['image']['dims_unknown'] ) ) {
             $item['image_note'] = [
                 'code'   => 'image_dimensions_unknown',
-                'detail' => 'attachment ' . (int) $item['image']['attachment_id'] . ' at ' . $item['image']['file'] . ' — shipped with unverified dimensions (NewsBreak declares no floor)',
+                'detail' => 'attachment ' . (int) $item['image']['attachment_id'] . ' (' . wp_basename( (string) $item['image']['file'] ) . ') — shipped with unverified dimensions (NewsBreak declares no floor)',
             ];
+        }
+        // The lead figure is prepended to the body: make that photo (and any
+        // photo repeated in the body) appear exactly once, at any rendition.
+        if ( ! empty( $item['image'] ) ) {
+            $pass = mmgrf_process_body_images( $item['san']['html'], [
+                'dedupe'          => true,
+                'lead_attachment' => (int) ( $item['image']['attachment_id'] ?? 0 ),
+                'lead_url'        => (string) $item['image']['url'],
+            ] );
+            $item['san']['html']         = mmgrf_prune_empty_nodes( $pass['html'] );
+            $item['san']['lead_in_body'] = $pass['lead'] === 'leading';
+            $item['inline_image_log']    = $pass['events'];
         }
         return $item;
     }
@@ -157,8 +169,9 @@ class MMGRF_Profile_NewsBreak extends MMGRF_Profile_Base {
         if ( ! $img ) {
             return $body;
         }
-        // Skip the prepend when the body already leads with this exact image.
-        if ( ( $item['san']['first_image_src'] ?? null ) === $img['url'] ) {
+        // Skip the prepend when the body already leads with this image (at
+        // any rendition — the body pass in prepare_item settles that).
+        if ( ! empty( $item['san']['lead_in_body'] ) || ( $item['san']['first_image_src'] ?? null ) === $img['url'] ) {
             return $body;
         }
         $alt    = $img['alt'] !== '' ? $img['alt'] : $item['title'];
