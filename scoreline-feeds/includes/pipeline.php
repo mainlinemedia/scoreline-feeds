@@ -344,7 +344,9 @@ function mmgrf_pick_image_fit( $img, $min_w, $min_h, $max_bytes = 0 ) {
     foreach ( $img['candidates'] ?? [] as $c ) {
         $c_bytes = (int) ( $c['filesize'] ?? 0 );
         if ( $fits( (int) $c['width'], (int) $c['height'], $c_bytes ) ) {
-            return array_merge( $img, [ 'url' => $c['url'], 'width' => (int) $c['width'], 'height' => (int) $c['height'], 'filesize' => $c_bytes ] );
+            $fit = array_merge( $img, [ 'url' => $c['url'], 'width' => (int) $c['width'], 'height' => (int) $c['height'], 'filesize' => $c_bytes ] );
+            unset( $fit['file_missing'] ); // this rendition exists; only the original was gone
+            return $fit;
         }
     }
     return null;
@@ -480,6 +482,110 @@ function mmgrf_raw_post_content( $post ) {
         $raw = (string) preg_replace( '/<!--more(.*?)?-->/', '', $raw );
     }
     return $raw;
+}
+
+/**
+ * The readable text of a rendered body: photo captions and credits, players,
+ * embeds, scripts and form chrome removed, tags stripped, whitespace
+ * collapsed. A space per tag boundary keeps adjacent blocks from merging
+ * words ("...ends here.</p><p>Second..." → "here. Second").
+ */
+function mmgrf_lede_text( $content ) {
+    $content = (string) $content;
+    $lede    = preg_replace( '#<(figure|figcaption|script|style|noscript|iframe|video|audio|svg|form|button|select)\b[^>]*>.*?</\1\s*>#is', ' ', $content ) ?? $content;
+    $lede    = wp_strip_all_tags( str_replace( '<', ' <', $lede ) );
+    return trim( preg_replace( '/[\s\x{00A0}]+/u', ' ', $lede ) ?? $lede );
+}
+
+/**
+ * Posts for a typed (slideshow/video) feed, under exactly the withholding
+ * rules the article feed applies: published, not password-protected, not in
+ * a policy-excluded category or tag, not excluded per post for this network
+ * ("Exclude from networks" / "Sponsored content"), and past the settle
+ * window. A typed feed that skipped these shipped sponsored posts.
+ */
+function mmgrf_typed_feed_posts( $network, $marker_ids, $post_count, $log_network, $not_marker_ids = [] ) {
+    if ( ! $marker_ids ) {
+        return []; // the marker tag does not exist on this site: nothing is tagged
+    }
+    $policy = mmgrf_policy_exclusions();
+    mmgrf_log_missing_exclusions( $log_network, $policy['missing'] );
+
+    $args = [
+        'post_type'           => 'post',
+        'post_status'         => 'publish',
+        'posts_per_page'      => max( 1, (int) $post_count ),
+        'orderby'             => 'date',
+        'order'               => 'DESC',
+        'tag__in'             => array_values( array_unique( array_map( 'intval', $marker_ids ) ) ),
+        'ignore_sticky_posts' => true,
+        'has_password'        => false,
+        'no_found_rows'       => true,
+    ];
+    if ( $policy['cats'] ) {
+        $args['category__not_in'] = $policy['cats'];
+    }
+    $not_tags = array_values( array_unique( array_merge( $policy['tags'], array_map( 'intval', (array) $not_marker_ids ) ) ) );
+    if ( $not_tags ) {
+        $args['tag__not_in'] = $not_tags;
+    }
+
+    $hold  = mmgrf_settle_seconds();
+    $posts = [];
+    foreach ( ( new WP_Query( $args ) )->posts as $post ) {
+        if ( get_post_meta( $post->ID, '_mmgrf_exclude_' . $network, true ) === '1' ) {
+            continue;
+        }
+        if ( $hold > 0 && (int) get_post_time( 'U', true, $post->ID ) > time() - $hold ) {
+            continue;
+        }
+        $posts[] = $post;
+    }
+    return $posts;
+}
+
+/** XML declaration through the channel header for a typed feed. */
+function mmgrf_typed_channel_open( $namespaces, $opts ) {
+    $ns_block = '';
+    foreach ( $namespaces as $prefix => $uri ) {
+        $ns_block .= "\n     xmlns:{$prefix}=\"{$uri}\"";
+    }
+    $xml  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+    $xml .= '<rss version="2.0"' . $ns_block . ">\n";
+    $xml .= "  <channel>\n";
+    $xml .= '    ' . mmgrf_el( 'title', $opts['feed_title'] ) . "\n";
+    $xml .= '    <atom:link href="' . mmgrf_xml( $opts['feed_url'] ) . '" rel="self" type="application/rss+xml"/>' . "\n";
+    $xml .= '    ' . mmgrf_el( 'link', $opts['feed_link'] ) . "\n";
+    $xml .= '    ' . mmgrf_el( 'description', $opts['feed_description'] ) . "\n";
+    $xml .= '    ' . mmgrf_el( 'lastBuildDate', mmgrf_rfc822( time() ) ) . "\n";
+    $xml .= '    ' . mmgrf_el( 'language', get_bloginfo( 'language' ) ) . "\n";
+    $xml .= '    <generator>Scoreline Feeds ' . mmgrf_xml( MMGRF_VERSION ) . "</generator>\n";
+    return $xml;
+}
+
+/**
+ * A post's tags as keyword terms: names decoded, commas removed (the list is
+ * comma-separated), and the routing marker tags left out — "slideshow" and
+ * "video" describe the feed, not the story. $max 0 = no cap.
+ */
+function mmgrf_post_keywords( $post_id, $max = 0 ) {
+    $tags = get_the_tags( $post_id );
+    if ( ! is_array( $tags ) ) {
+        return [];
+    }
+    $markers  = array_merge( mmgrf_slideshow_marker_ids(), mmgrf_video_marker_ids() );
+    $keywords = [];
+    foreach ( $tags as $tag ) {
+        if ( in_array( (int) $tag->term_id, $markers, true ) ) {
+            continue;
+        }
+        $name = trim( (string) preg_replace( '/\s+/', ' ', str_replace( ',', ' ', mmgrf_text_field( $tag->name ) ) ) );
+        if ( $name !== '' ) {
+            $keywords[] = $name;
+        }
+    }
+    $keywords = array_values( array_unique( $keywords ) );
+    return $max > 0 ? array_slice( $keywords, 0, $max ) : $keywords;
 }
 
 /** Run the_content for a post between the integrator hooks (always paired). */
@@ -648,10 +754,7 @@ function mmgrf_build_item( $post, $network, $opts, $hold = 0 ) {
         // merging words ("...ends here.</p><p>Second..." → "here. Second").
         // Literal ellipsis, not &hellip; — the value lands inside CDATA where
         // entities are not decoded by the XML parser.
-        $lede    = preg_replace( '#<(figure|figcaption|script|style|noscript|iframe)\b[^>]*>.*?</\1\s*>#is', ' ', $content ) ?? $content;
-        $lede    = wp_strip_all_tags( str_replace( '<', ' <', $lede ) );
-        $lede    = preg_replace( '/\s+/u', ' ', $lede ) ?? $lede;
-        $excerpt = mmgrf_xml_chars( mmgrf_plain_text( wp_trim_words( trim( $lede ), 55, '…' ) ) );
+        $excerpt = mmgrf_xml_chars( mmgrf_plain_text( wp_trim_words( mmgrf_lede_text( $content ), 55, '…' ) ) );
     }
 
     $categories = get_the_category( $post_id );
