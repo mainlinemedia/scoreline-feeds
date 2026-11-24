@@ -86,21 +86,8 @@ class MMGRF_Profile_Yahoo extends MMGRF_Profile_Base {
         $item['affiliate_log']  = $guard['events'];
         $item['affiliate_skip'] = $guard['skip'];
 
-        // Fix 9: gate inline body images with the same ladder as the lead —
-        // WordPress inserts 1024px renditions that render fine on-site but
-        // violate Yahoo's floor in the feed. Yahoo-only: NewsBreak and MSN
-        // declare no inline minimums.
-        $gated = mmgrf_gate_inline_images( $item['san']['html'], self::IMG_MIN_W, self::IMG_MIN_H, self::IMG_MAX_BYTES );
-        // Fix 4: prune empty nodes AFTER the gate, so a figure emptied by an
-        // image removal is swept in the same cycle.
-        $gated['html'] = mmgrf_prune_empty_nodes( $gated['html'] );
-        $item['san']['html'] = $gated['html'];
-        $item['san']['first_image_attachment'] = $gated['first_image_attachment'];
-        $item['inline_image_log'] = $gated['events'];
-        // Recompute image facts the gate may have changed.
-        $item['san']['body_has_image']  = stripos( $gated['html'], '<img' ) !== false;
-        $item['san']['first_image_src'] = preg_match( '/<img[^>]+src="([^"]+)"/i', $gated['html'], $m ) ? $m[1] : null;
-
+        // Lead image first: the body pass below needs to know which photo
+        // is the lead so it appears in the item exactly once.
         $img = $item['image'];
         if ( $img ) {
             $picked = $this->pick_image_candidate( $img, self::IMG_MIN_W, self::IMG_MIN_H, self::IMG_MAX_BYTES );
@@ -112,7 +99,7 @@ class MMGRF_Profile_Yahoo extends MMGRF_Profile_Base {
                 } elseif ( ! empty( $img['dims_unknown'] ) ) {
                     // Yahoo's floor is a hard requirement; never ship an asset
                     // whose size cannot be verified.
-                    $item['image_dropped'] = [ 'code' => 'image_dimensions_unknown', 'detail' => 'attachment ' . (int) $img['attachment_id'] . ' at ' . $img['file'] . ' — dimensions unverifiable' ];
+                    $item['image_dropped'] = [ 'code' => 'image_dimensions_unknown', 'detail' => 'attachment ' . (int) $img['attachment_id'] . ' (' . wp_basename( (string) $img['file'] ) . ') — dimensions unverifiable' ];
                 } elseif ( ! empty( $img['filesize'] ) && $img['filesize'] > self::IMG_MAX_BYTES ) {
                     $item['image_dropped'] = [ 'code' => 'image_over_size_limit', 'detail' => 'over Yahoo 5MB limit with no smaller rendition — shipped without image' ];
                 } else {
@@ -121,6 +108,38 @@ class MMGRF_Profile_Yahoo extends MMGRF_Profile_Base {
             }
             $item['image'] = $picked;
         }
+        $lead = $item['image'];
+
+        // Body images, one pass:
+        //  - Fix 9 gate: WordPress inserts 1024px renditions that render fine
+        //    on-site but violate Yahoo's floor in the feed (Yahoo-only:
+        //    NewsBreak and MSN declare no inline minimums);
+        //  - a photo repeated in the body is reduced to one copy, and the lead
+        //    photo is made to appear exactly once — Yahoo flags any item
+        //    listing the same image twice ("Duplicate photos").
+        $pass = mmgrf_process_body_images( $item['san']['html'], [
+            'min_w'           => self::IMG_MIN_W,
+            'min_h'           => self::IMG_MIN_H,
+            'max_bytes'       => self::IMG_MAX_BYTES,
+            'dedupe'          => true,
+            'lead_attachment' => (int) ( $lead['attachment_id'] ?? 0 ),
+            'lead_url'        => (string) ( $lead['url'] ?? '' ),
+        ] );
+        // Fix 4: prune empty nodes AFTER the image pass, so a figure emptied
+        // by an image removal is swept in the same cycle.
+        $html = mmgrf_prune_empty_nodes( $pass['html'] );
+
+        $item['san']['html']                   = $html;
+        $item['san']['first_image_attachment'] = $pass['first_image_attachment'];
+        $item['san']['lead_in_body']           = $pass['lead'] === 'leading';
+        $item['san']['lead_caption']           = $pass['lead_caption'];
+        $item['san']['lead_alt']               = $pass['lead_alt'];
+        $item['san']['body_has_image']         = (bool) $pass['images'];
+        $item['san']['first_image_src']        = $pass['images'][0]['url'] ?? null;
+        // The body floor is judged on what actually ships — the passes above
+        // can remove captions and whole paragraphs.
+        $item['san']['word_count']             = mmgrf_count_words( $html );
+        $item['inline_image_log']              = $pass['events'];
         return $item;
     }
 
@@ -128,7 +147,7 @@ class MMGRF_Profile_Yahoo extends MMGRF_Profile_Base {
         if ( trim( (string) $item['title'] ) === '' ) {
             return $this->fail( 'title_empty', 'Yahoo minimum: 1 word' );
         }
-        $desc_words = preg_split( '/\s+/u', trim( (string) $item['excerpt'] ), -1, PREG_SPLIT_NO_EMPTY );
+        $desc_words = preg_split( '/\s+/u', trim( mmgrf_utf8( $item['excerpt'] ) ), -1, PREG_SPLIT_NO_EMPTY ) ?: [];
         if ( count( $desc_words ) < self::DESC_MIN_WORDS ) {
             return $this->fail( 'description_below_word_floor', count( $desc_words ) . ' words (floor 3)' );
         }
@@ -172,11 +191,19 @@ class MMGRF_Profile_Yahoo extends MMGRF_Profile_Base {
         // have rewritten the body copy to a different rendition URL).
         $same_attachment = ! empty( $img['attachment_id'] )
             && (int) ( $item['san']['first_image_attachment'] ?? 0 ) === (int) $img['attachment_id'];
-        if ( $img && ! $same_attachment && ( $item['san']['first_image_src'] ?? null ) !== $img['url'] ) {
+        $already_leads   = ! empty( $item['san']['lead_in_body'] ) || $same_attachment
+            || ( $item['san']['first_image_src'] ?? null ) === ( $img['url'] ?? '' );
+        if ( $img && ! $already_leads ) {
             // Preferred method: lead image as the FIRST element of content:encoded,
             // figure-wrapped with alt + caption (the only method that carries one).
-            $figure = '<figure><img src="' . mmgrf_xml( $img['url'] ) . '" alt="' . mmgrf_xml( $img['alt'] !== '' ? $img['alt'] : $item['title'] ) . '"/>';
+            // Attachment metadata first; then what the editor typed on the
+            // block this figure was moved from; the headline as a last resort.
+            $alt    = $img['alt'] !== '' ? $img['alt'] : ( ( $item['san']['lead_alt'] ?? '' ) !== '' ? $item['san']['lead_alt'] : $item['title'] );
+            $figure = '<figure><img src="' . mmgrf_xml( $img['url'] ) . '" alt="' . mmgrf_xml( $alt ) . '"/>';
             $credit = $img['credit'] !== '' ? $img['credit'] : $img['caption'];
+            if ( $credit === '' ) {
+                $credit = (string) ( $item['san']['lead_caption'] ?? '' );
+            }
             if ( $credit !== '' ) {
                 $figure .= '<figcaption>' . mmgrf_xml( $credit ) . '</figcaption>';
             }

@@ -2,6 +2,8 @@
 // Profile validation gates + item rendering, per network. Items are hand-built
 // in the pipeline's normalized shape, then run through prepare/validate/render.
 
+define( 'MMGRF_TEST_PUB_TS', strtotime( gmdate( 'Y-m-d 12:00:00', time() - 30 * 86400 ) . ' UTC' ) );
+
 function mk_item( $over = [] ) {
     $body = '<p>' . implode( ' ', array_fill( 0, 200, 'word' ) ) . '</p>';
     return array_merge( [
@@ -10,8 +12,10 @@ function mk_item( $over = [] ) {
         'short_title'   => '',
         'permalink'     => 'https://example-brand.com/story-slug/',
         'link'          => 'https://example-brand.com/story-slug/',
-        'pub_ts'        => strtotime( '2026-08-01 12:00:00 UTC' ),
-        'mod_ts'        => strtotime( '2026-08-01 12:00:00 UTC' ),
+        // Relative, never a fixed date: a hard-coded one eventually crosses
+        // MSN's 365-day gate and turns unrelated tests red.
+        'pub_ts'        => MMGRF_TEST_PUB_TS,
+        'mod_ts'        => MMGRF_TEST_PUB_TS,
         'author'        => "O'Brien & Sons",
         'categories'    => [ 'News & Views' ],
         'tags'          => [ 'nfl' ],
@@ -101,15 +105,15 @@ t( 'yahoo: guid is stable clean permalink and pubDate is RFC822 GMT', function()
     $item = $p->prepare_item( mk_item() );
     $xml = $p->render_item( $item, profile_opts() );
     expect_contains( $xml, '<guid isPermaLink="true">https://example-brand.com/story-slug/</guid>' );
-    expect_contains( $xml, '<pubDate>Sat, 01 Aug 2026 12:00:00 +0000</pubDate>' );
+    expect_contains( $xml, '<pubDate>' . gmdate( 'D, d M Y H:i:s', MMGRF_TEST_PUB_TS ) . ' +0000</pubDate>' );
 } );
 
 t( 'yahoo: updated element emitted only when genuinely modified', function() {
     $p = new MMGRF_Profile_Yahoo();
     $same = $p->render_item( $p->prepare_item( mk_item() ), profile_opts() );
     expect_not_contains( $same, '<updated>' );
-    $mod = $p->render_item( $p->prepare_item( mk_item( [ 'mod_ts' => strtotime( '2026-08-02 09:00:00 UTC' ) ] ) ), profile_opts() );
-    expect_contains( $mod, '<updated>Sun, 02 Aug 2026 09:00:00 +0000</updated>' );
+    $mod = $p->render_item( $p->prepare_item( mk_item( [ 'mod_ts' => MMGRF_TEST_PUB_TS + 75600 ] ) ), profile_opts() );
+    expect_contains( $mod, '<updated>' . gmdate( 'D, d M Y H:i:s', MMGRF_TEST_PUB_TS + 75600 ) . ' +0000</updated>' );
 } );
 
 t( 'yahoo: style attributes never reach output', function() {
@@ -198,7 +202,7 @@ t( 'newsbreak: guid is clean permalink, pubDate true GMT, creator CDATA unescape
     $p = new MMGRF_Profile_NewsBreak();
     $xml = $p->render_item( $p->prepare_item( mk_item() ), profile_opts() );
     expect_contains( $xml, '<guid isPermaLink="true">https://example-brand.com/story-slug/</guid>' );
-    expect_contains( $xml, '<pubDate>Sat, 01 Aug 2026 12:00:00 +0000</pubDate>' );
+    expect_contains( $xml, '<pubDate>' . gmdate( 'D, d M Y H:i:s', MMGRF_TEST_PUB_TS ) . ' +0000</pubDate>' );
     expect_contains( $xml, "<dc:creator><![CDATA[O'Brien & Sons]]></dc:creator>", 'D1 fix: raw value inside CDATA' );
     expect_not_contains( $xml, '&amp; Sons', 'no double-escaping inside CDATA' );
 } );

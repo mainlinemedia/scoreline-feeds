@@ -108,9 +108,15 @@ t( 'updater: newer manifest version yields an update object with a github packag
     expect_eq( $u['plugin'], 'scoreline-feeds/scoreline-feeds.php' );
 } );
 
-t( 'updater: current or older manifest version yields no update', function() {
-    r2_manifest( json_encode( [ 'version' => MMGRF_VERSION, 'package' => 'https://github.com/mainlinemedia/scoreline-feeds/releases/download/x/x.zip' ] ) );
-    expect_false( is_array( mmgrf_github_update_check( false, [], 'scoreline-feeds/scoreline-feeds.php' ) ) );
+t( 'updater: an up-to-date site still gets an answer, so WordPress offers the auto-update toggle', function() {
+    // Core only lists a plugin as auto-update capable when the filter
+    // returned data; core itself decides "newer or not" (never a downgrade).
+    $v = MMGRF_VERSION;
+    r2_manifest( json_encode( [ 'version' => $v, 'package' => "https://github.com/mainlinemedia/scoreline-feeds/releases/download/v$v/scoreline-feeds-$v.zip" ] ) );
+    $u = mmgrf_github_update_check( false, [], 'scoreline-feeds/scoreline-feeds.php' );
+    expect_eq( $u['version'], $v );
+    expect_eq( $u['new_version'], $v );
+    expect_eq( $u['slug'], 'scoreline-feeds' );
 } );
 
 t( 'updater: package on a foreign host is rejected outright', function() {

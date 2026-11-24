@@ -53,6 +53,8 @@ class MMGRF_Profile_MSN extends MMGRF_Profile_Base {
             // Verified platform list — YouTube deliberately excluded (rejected at ingestion).
             'iframe_hosts'         => [ 'x.com', 'twitter.com', 'facebook.com', 'instagram.com', 'pinterest.com', 'spotify.com', 'infogram.com', 'maps.google.com', 'google.com/maps', 'giphy.com', 'flourish.studio', 'flo.uri.sh', 'reddit.com', 'redditmedia.com', 'tiktok.com' ],
             'blocked_iframe_hosts' => [ 'youtube.com', 'youtube-nocookie.com', 'youtu.be' ],
+            // MSN's set stops at h5: demote rather than lose the heading.
+            'rename_tags'          => [ 'h6' => 'h5' ],
             'base_url'             => home_url(),
         ];
     }
@@ -71,7 +73,11 @@ class MMGRF_Profile_MSN extends MMGRF_Profile_Base {
 
     public function prepare_item( $item, $opts = [] ) {
         $item = parent::prepare_item( $item, $opts );
-        $item['san']['html'] = mmgrf_prune_empty_nodes( $item['san']['html'] );
+        // The syndication-rights flag covers body images too, not only the
+        // thumbnail: a flagged Getty photo inserted inline must not ship.
+        $pass = mmgrf_process_body_images( $item['san']['html'], [ 'drop_no_rights' => true ] );
+        $item['inline_image_log'] = $pass['events'];
+        $item['san']['html']      = mmgrf_prune_empty_nodes( $pass['html'] );
         $img = $item['image'];
         if ( $img ) {
             if ( ! empty( $img['no_synd_rights'] ) ) {
@@ -85,7 +91,7 @@ class MMGRF_Profile_MSN extends MMGRF_Profile_Base {
                     $item['image_dropped'] = [ 'code' => 'image_file_missing', 'detail' => 'attachment ' . (int) $img['attachment_id'] . ' — no rendition file exists on disk; re-upload or re-save the image' ];
                 } elseif ( ! $picked ) {
                     $item['image_dropped'] = ! empty( $img['dims_unknown'] )
-                        ? [ 'code' => 'image_dimensions_unknown', 'detail' => 'attachment ' . (int) $img['attachment_id'] . ' at ' . $img['file'] . ' — dimensions unverifiable' ]
+                        ? [ 'code' => 'image_dimensions_unknown', 'detail' => 'attachment ' . (int) $img['attachment_id'] . ' (' . wp_basename( (string) $img['file'] ) . ') — dimensions unverifiable' ]
                         : [ 'code' => 'image_below_minimum', 'detail' => (int) $img['width'] . 'x' . (int) $img['height'] . ' fails MSN limits (min 640x360, max 2MB)' ];
                 }
                 $item['image'] = $picked;
@@ -99,8 +105,8 @@ class MMGRF_Profile_MSN extends MMGRF_Profile_Base {
         if ( $title_len < self::TITLE_MIN ) {
             return $this->fail( 'title_too_short', "{$title_len} chars; MSN requires more than 20" );
         }
-        if ( $title_len > self::TITLE_MAX && trim( (string) $item['short_title'] ) === '' ) {
-            return $this->fail( 'title_too_long_no_short_title', "{$title_len} chars; set a short title in the Syndication box" );
+        if ( $title_len > self::TITLE_MAX && $this->short_title( $item ) === '' ) {
+            return $this->fail( 'title_too_long_no_short_title', "{$title_len} chars; set a short title (150 characters or fewer) in the Syndication box" );
         }
         $now = time();
         if ( $item['pub_ts'] > $now ) {
@@ -121,11 +127,17 @@ class MMGRF_Profile_MSN extends MMGRF_Profile_Base {
         return $this->ok();
     }
 
+    /** The post's short title when it is usable; '' otherwise. An over-long one must not unlock the >150 path. */
+    private function short_title( $item ) {
+        $short = trim( (string) ( $item['short_title'] ?? '' ) );
+        return ( $short !== '' && mb_strlen( $short ) <= self::TITLE_MAX ) ? $short : '';
+    }
+
     public function render_item( $item, $opts ) {
         $out  = "    <item>\n";
         $out .= '      ' . mmgrf_el( 'title', $item['title'], [], true ) . "\n";
-        if ( trim( (string) $item['short_title'] ) !== '' ) {
-            $out .= '      ' . mmgrf_el( 'mi:shortTitle', trim( $item['short_title'] ) ) . "\n";
+        if ( $this->short_title( $item ) !== '' ) {
+            $out .= '      ' . mmgrf_el( 'mi:shortTitle', $this->short_title( $item ) ) . "\n";
         }
         $out .= '      ' . mmgrf_el( 'link', $item['link'] ) . "\n";
         $out .= '      <guid isPermaLink="false">' . mmgrf_xml( $item['permalink'] ) . "</guid>\n";

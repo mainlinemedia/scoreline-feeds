@@ -3,7 +3,7 @@
  * Plugin Name: Scoreline Feeds
  * Plugin URI:  https://mainlinemediagroup.com
  * Description: Multi-network syndication feeds (Aigeon raw feed, NewsBreak, MSN, Yahoo) with per-network compliance profiles. Replaces both "MMG Raw Feed" v2.x and "NewsBreak RSS Feed" v1.x — deactivate those before activating this.
- * Version:     3.5.3
+ * Version:     3.6.0
  * Author:      Mainline Media Group
  * License:     GPL2
  * Update URI:  https://github.com/mainlinemedia/scoreline-feeds
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'MMGRF_VERSION', '3.5.3' );
+define( 'MMGRF_VERSION', '3.6.0' );
 define( 'MMGRF_DIR', __DIR__ );
 
 require_once MMGRF_DIR . '/includes/emitter.php';
@@ -28,6 +28,7 @@ require_once MMGRF_DIR . '/profiles/class-profile-msn.php';
 require_once MMGRF_DIR . '/profiles/class-profile-yahoo.php';
 require_once MMGRF_DIR . '/includes/options.php';
 require_once MMGRF_DIR . '/includes/pipeline.php';
+require_once MMGRF_DIR . '/includes/health.php';
 require_once MMGRF_DIR . '/includes/admin.php';
 require_once MMGRF_DIR . '/includes/syndication-check.php';
 require_once MMGRF_DIR . '/includes/updater.php';
@@ -39,6 +40,11 @@ require_once MMGRF_DIR . '/includes/video-feed.php';
 // Legacy {slug}-raw-feed routes (aigeon profile) are unconditional —
 // back-compat contract (§6). Network routes register only when enabled.
 // ─────────────────────────────────────────────────────────────────
+
+/** Is the standalone "NewsBreak RSS Feed" plugin (which this one replaces) still active? */
+function mmgrf_legacy_newsbreak_active() {
+    return (bool) apply_filters( 'mmgrf_legacy_newsbreak_active', class_exists( 'NewsBreak_RSS_Feed' ) );
+}
 
 add_action( 'init', 'mmgrf_register_all_feeds' );
 function mmgrf_register_all_feeds() {
@@ -83,7 +89,7 @@ function mmgrf_register_all_feeds() {
         // owns ?feed=newsbreak, don't fight it for the route. Validate the v3
         // output on a parallel slug (e.g. newsbreak-v3), then retire the old
         // plugin and switch the slug back.
-        if ( $net['slug'] === 'newsbreak' && class_exists( 'NewsBreak_RSS_Feed' ) ) {
+        if ( $net['slug'] === 'newsbreak' && mmgrf_legacy_newsbreak_active() ) {
             continue;
         }
         add_feed( $net['slug'], function() use ( $network ) {
@@ -91,7 +97,7 @@ function mmgrf_register_all_feeds() {
         } );
 
         // Slideshow and video feeds ride the same enable toggle (Yahoo + MSN).
-        if ( $network === 'yahoo' || $network === 'msn' ) {
+        if ( in_array( $network, MMGRF_TYPED_NETWORKS, true ) ) {
             add_feed( $net['slug'] . '-slideshows', function() use ( $network ) {
                 mmgrf_output_slideshow_feed( $network );
             } );
@@ -100,38 +106,31 @@ function mmgrf_register_all_feeds() {
             } );
         }
     }
+}
 
-    if ( get_transient( 'mmgrf_flush_rewrites' ) ) {
-        flush_rewrite_rules( false );
-        delete_transient( 'mmgrf_flush_rewrites' );
-    }
-
-    // Self-healing rewrites: whenever the set of feed routes this plugin
-    // registers changes (fresh install, toggle flipped, slug edited, site
-    // cloned from staging), flush once automatically. Pretty feed URLs
-    // 404ing until someone remembers Settings → Permalinks → Save has now
-    // bitten two production sites (liveforever, rockytopinsider).
-    $slugs = [ $opts['feed_slug'] . '-raw-feed' ];
-    foreach ( mmgrf_get_tag_feeds() as $tf ) {
-        if ( ! empty( $tf['slug'] ) ) {
-            $slugs[] = $tf['slug'] . '-raw-feed';
-        }
-    }
-    foreach ( mmgrf_get_network_config() as $network => $net ) {
-        if ( ! empty( $net['enabled'] ) ) {
-            $slugs[] = $net['slug'];
-            if ( $network === 'yahoo' || $network === 'msn' ) {
-                $slugs[] = $net['slug'] . '-slideshows';
-                $slugs[] = $net['slug'] . '-videos';
-            }
-        }
-    }
+/**
+ * Self-healing rewrites: whenever the set of feed routes this plugin
+ * registers changes (fresh install, toggle flipped, slug edited, site cloned
+ * from staging), flush once automatically. Pretty feed URLs 404ing until
+ * someone remembers Settings → Permalinks → Save has bitten two production
+ * sites (liveforever, rockytopinsider).
+ *
+ * Runs on wp_loaded, not init: a flush requested during init is only
+ * QUEUED by core until wp_loaded, so recording "healed" at init would stick
+ * even if the request died before the rules were actually rebuilt. The
+ * signature is autoloaded so the check costs no query on normal page views.
+ */
+add_action( 'wp_loaded', 'mmgrf_heal_rewrites' );
+function mmgrf_heal_rewrites() {
+    $slugs = mmgrf_registered_feed_slugs();
     sort( $slugs );
     $sig = md5( implode( '|', $slugs ) );
-    if ( get_option( 'mmgrf_rewrite_sig' ) !== $sig ) {
-        flush_rewrite_rules( false );
-        update_option( 'mmgrf_rewrite_sig', $sig, 'no' );
+    if ( get_option( 'mmgrf_routes_sig' ) === $sig ) {
+        return;
     }
+    flush_rewrite_rules( false );
+    update_option( 'mmgrf_routes_sig', $sig, true );
+    delete_option( 'mmgrf_rewrite_sig' ); // pre-3.6 name (was not autoloaded)
 }
 
 /** Variant used by tag feeds where options are pre-resolved. */
@@ -150,7 +149,7 @@ function mmgrf_output_network_feed_with_opts( $network, $opts, $filters = [] ) {
 
 add_action( 'init', 'mmgrf_register_default_feed_enhancement', 2 );
 function mmgrf_register_default_feed_enhancement() {
-    if ( class_exists( 'NewsBreak_RSS_Feed' ) ) {
+    if ( mmgrf_legacy_newsbreak_active() ) {
         return; // the standalone plugin already enhances /feed/ — never double up
     }
     $opts = mmgrf_get_options();
@@ -195,17 +194,17 @@ function mmgrf_default_feed_media_tags() {
     if ( ! $post || ! has_post_thumbnail( $post->ID ) ) {
         return;
     }
-    $thumb_id = get_post_thumbnail_id( $post->ID );
-    $image    = wp_get_attachment_image_src( $thumb_id, 'large' );
-    if ( ! $image ) {
+    // Same resolver as the network feeds: true rendition dimensions (never
+    // the theme's $content_width-constrained ones) and the rendition's own
+    // byte size, with a missing file never advertised.
+    $img = mmgrf_attachment_image_data( get_post_thumbnail_id( $post->ID ), 'large' );
+    if ( ! $img || ! empty( $img['file_missing'] ) ) {
         return;
     }
-    $mime = get_post_mime_type( $thumb_id ) ?: 'image/jpeg';
-    $file = get_attached_file( $thumb_id );
-    $size = ( $file && file_exists( $file ) ) ? filesize( $file ) : 100000;
-    echo '<media:thumbnail url="' . mmgrf_xml( $image[0] ) . '" width="' . (int) $image[1] . '" height="' . (int) $image[2] . '" />' . "\n";
-    echo '<media:content medium="image" url="' . mmgrf_xml( $image[0] ) . '" width="' . (int) $image[1] . '" height="' . (int) $image[2] . '" type="' . mmgrf_xml( $mime ) . '" />' . "\n";
-    echo '<enclosure url="' . mmgrf_xml( $image[0] ) . '" length="' . (int) $size . '" type="' . mmgrf_xml( $mime ) . '" />' . "\n";
+    $dims = ( $img['width'] > 0 && $img['height'] > 0 ) ? ' width="' . (int) $img['width'] . '" height="' . (int) $img['height'] . '"' : '';
+    echo '<media:thumbnail url="' . mmgrf_xml( $img['url'] ) . '"' . $dims . ' />' . "\n";
+    echo '<media:content medium="image" url="' . mmgrf_xml( $img['url'] ) . '"' . $dims . ' type="' . mmgrf_xml( $img['type'] ) . '" />' . "\n";
+    echo '<enclosure url="' . mmgrf_xml( $img['url'] ) . '" length="' . (int) ( $img['filesize'] ?: 100000 ) . '" type="' . mmgrf_xml( $img['type'] ) . '" />' . "\n";
 }
 
 function mmgrf_default_feed_prepend_image( $content ) {
@@ -217,13 +216,15 @@ function mmgrf_default_feed_prepend_image( $content ) {
         return $content;
     }
     $thumb_id = get_post_thumbnail_id( $post->ID );
-    $url      = wp_get_attachment_image_url( $thumb_id, 'large' );
-    if ( ! $url ) {
+    $img      = mmgrf_attachment_image_data( $thumb_id, 'large' );
+    if ( ! $img || ! empty( $img['file_missing'] ) ) {
         return $content;
     }
-    $alt    = get_post_meta( $thumb_id, '_wp_attachment_image_alt', true ) ?: get_the_title( $post->ID );
-    $credit = mmgrf_resolve_credit( $post->ID, $thumb_id );
-    $figure = '<figure><img src="' . mmgrf_xml( $url ) . '" alt="' . mmgrf_xml( $alt ) . '" />';
+    // Plain-text fields come back from WordPress entity-encoded (a
+    // texturized title is "Yamaha&#8217;s…"): decode once, escape once.
+    $alt    = $img['alt'] !== '' ? $img['alt'] : mmgrf_text_field( get_the_title( $post->ID ) );
+    $credit = mmgrf_text_field( mmgrf_resolve_credit( $post->ID, $thumb_id ) );
+    $figure = '<figure><img src="' . mmgrf_xml( $img['url'] ) . '" alt="' . mmgrf_xml( $alt ) . '" />';
     if ( $credit !== '' ) {
         $figure .= '<figcaption>' . mmgrf_xml( $credit ) . '</figcaption>';
     }
