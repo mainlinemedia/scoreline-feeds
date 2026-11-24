@@ -580,7 +580,9 @@ function mmgrf_image_identity( $url ) {
     $url  = html_entity_decode( trim( (string) $url ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
     $norm = mmgrf_normalize_upload_url( $url );
     if ( $norm === '' ) {
-        $norm = (string) preg_replace( '/[?#].*$/', '', $url );
+        // Not one of our uploads: the query string can BE the image
+        // (chart and image-proxy endpoints), so only the fragment goes.
+        $norm = (string) preg_replace( '/#.*$/', '', $url );
     }
     $norm = mmgrf_strip_size_suffix( $norm );
     return strtolower( (string) preg_replace( '/-scaled(\.[a-z0-9]+)$/i', '$1', $norm ) );

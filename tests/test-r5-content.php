@@ -366,3 +366,11 @@ t( 'r5: no author-visible log detail carries an absolute server path', function(
     @unlink( $tmp );
     expect_true( in_array( 'image_dimensions_unknown', array_column( mmgrf_skip_log_get(), 'code' ), true ) );
 } );
+
+t( 'r5: two external images that differ only by query string are different images', function() {
+    $GLOBALS['mmgrf_test']['upload_baseurl'] = 'https://example-brand.com/wp-content/uploads';
+    $pass = mmgrf_process_body_images( '<p>a</p><img src="https://charts.example.net/render?id=1"><p>b</p><img src="https://charts.example.net/render?id=2">', [ 'dedupe' => true ] );
+    expect_eq( count( $pass['images'] ), 2 );
+    // …while two renditions of one upload are still the same photo.
+    expect_eq( mmgrf_image_identity( 'https://i0.wp.com/example-brand.com/wp-content/uploads/2026/11/a-1024x576.jpg?resize=1' ), mmgrf_image_identity( 'https://example-brand.com/wp-content/uploads/2026/11/a-scaled.jpg' ) );
+} );

@@ -6,14 +6,26 @@
  * counts). Rolling option, newest first, 200-cap, 7-day retention, never
  * autoloaded.
  *
- * Codes in use: no_featured_image, image_below_minimum, image_over_size_limit,
- * image_dimensions_unknown, image_format_unsupported, no_syndication_rights,
- * inline_image_below_minimum, inline_image_unresolvable,
- * affiliate_domain_matched, affiliate_path_matched, body_below_word_floor,
- * body_empty, title_empty, title_too_short, title_too_long_no_short_title,
- * description_below_word_floor, pubdate_future, pubdate_too_old, link_missing,
- * guid_missing, embed_review, render_error, filter_term_missing,
- * exclusion_term_missing.
+ * Codes in use
+ *   items:      title_empty, title_too_short, title_too_long_no_short_title,
+ *               description_below_word_floor, body_below_word_floor,
+ *               body_empty, pubdate_future, pubdate_too_old, link_missing,
+ *               guid_missing, embed_review, render_error
+ *   lead image: no_featured_image, image_below_minimum, image_below_recommended,
+ *               image_over_size_limit, image_dimensions_unknown,
+ *               image_file_missing, image_format_unsupported,
+ *               no_syndication_rights
+ *   body:       inline_image_below_minimum, inline_image_unresolvable,
+ *               inline_image_rewritten, inline_image_duplicate,
+ *               affiliate_domain_matched, affiliate_path_matched
+ *   slideshows: slide_missing_image, slide_image_unresolvable,
+ *               slide_below_minimum, slide_duplicate_image,
+ *               slideshow_too_few_slides, slideshow_layout_ambiguous,
+ *               thumbnail_duplicates_slide
+ *   videos:     video_missing, video_format_unsupported, video_not_self_hosted,
+ *               video_file_missing, video_below_minimum,
+ *               video_duration_unknown, video_dimensions_unknown
+ *   settings:   filter_term_missing, exclusion_term_missing (post id 0)
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
