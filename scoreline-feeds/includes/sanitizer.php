@@ -82,12 +82,16 @@ function mmgrf_dom_load( $html ) {
 
     $prev = libxml_use_internal_errors( true );
     $doc  = new DOMDocument( '1.0', 'UTF-8' );
-    $opts = LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD;
+    $opts = LIBXML_HTML_NODEFDTD;
     if ( defined( 'LIBXML_PARSEHUGE' ) ) {
         $opts |= LIBXML_PARSEHUGE; // deep runs of unclosed tags must not cut the parse short
     }
-    // The xml PI forces UTF-8 interpretation; the wrapper div gives fragments a single root.
-    $ok = $doc->loadHTML( '<?xml encoding="utf-8"?><div id="mmgrf-root">' . $html . '</div>', $opts );
+    // The xml PI forces UTF-8 interpretation. The fragment sits in a wrapper
+    // div inside an explicit <body>: when a stray closing tag in the content
+    // closes the wrapper early, what follows lands in <body> — where every
+    // libxml version keeps it (text included) — and is adopted back below.
+    // (With no <body>, older libxml silently discards escaped text.)
+    $ok = $doc->loadHTML( '<?xml encoding="utf-8"?><html><body><div id="mmgrf-root">' . $html . '</div></body></html>', $opts );
     libxml_clear_errors();
     libxml_use_internal_errors( $prev );
     if ( ! $ok ) {
@@ -95,23 +99,35 @@ function mmgrf_dom_load( $html ) {
     }
 
     $root = null;
-    foreach ( $doc->childNodes as $node ) {
-        if ( $node instanceof DOMElement && $node->getAttribute( 'id' ) === 'mmgrf-root' ) {
+    foreach ( $doc->getElementsByTagName( 'div' ) as $node ) {
+        if ( $node->getAttribute( 'id' ) === 'mmgrf-root' ) {
             $root = $node;
-            break;
+            break; // document order: ours is the first, whatever the content holds
         }
     }
     if ( ! $root ) {
         return null;
     }
-    $escaped = [];
-    for ( $n = $root->nextSibling; $n; $n = $n->nextSibling ) {
-        if ( $n instanceof DOMElement || $n instanceof DOMText || $n instanceof DOMComment ) {
+    // Adopt everything that escaped the wrapper: later siblings of the
+    // wrapper, then of each ancestor up to the document.
+    for ( $anchor = $root; $anchor && $anchor->parentNode; $anchor = $anchor->parentNode ) {
+        $escaped = [];
+        for ( $n = $anchor->nextSibling; $n; $n = $n->nextSibling ) {
             $escaped[] = $n;
         }
-    }
-    foreach ( $escaped as $n ) {
-        $root->appendChild( $n );
+        foreach ( $escaped as $n ) {
+            if ( $n instanceof DOMElement && in_array( strtolower( $n->tagName ), [ 'body', 'html', 'head' ], true ) ) {
+                while ( $n->firstChild ) {
+                    $root->appendChild( $n->firstChild );
+                }
+                $n->parentNode->removeChild( $n );
+            } elseif ( $n instanceof DOMElement || $n instanceof DOMText || $n instanceof DOMComment ) {
+                $root->appendChild( $n );
+            }
+        }
+        if ( $anchor->parentNode instanceof DOMDocument ) {
+            break;
+        }
     }
     return [ $doc, $root ];
 }

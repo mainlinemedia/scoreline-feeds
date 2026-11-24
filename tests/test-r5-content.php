@@ -64,7 +64,8 @@ t( 'r5: removing an <embed> does not remove the rest of the article', function()
         expect_eq( $out, '<p>Intro paragraph.</p><p>Second paragraph.</p><h2>Heading</h2><p>Third paragraph.</p>', $n );
     }
     $yahoo = r5_clean( $html, 'yahoo' )['html'];
-    expect_contains( $yahoo, '</embed><p>Second paragraph.</p>', 'yahoo keeps the embed, with the article beside it — not inside it' );
+    // (libxml versions differ on whether <embed> is serialized with a closing tag.)
+    expect_match( $yahoo, '#^<p>Intro paragraph\.</p><embed [^>]*>(</embed>)?<p>Second paragraph\.</p><h2>Heading</h2><p>Third paragraph\.</p>$#', 'yahoo keeps the embed, with the article beside it — not inside it' );
     expect_contains( r5_clean( '<p>Intro with inline <embed src="http://x.test/a.swf"> and the rest of this sentence.</p>', 'msn' )['html'], 'and the rest of this sentence.' );
 } );
 

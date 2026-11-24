@@ -124,7 +124,10 @@ foreach ( [ 'yahoo', 'msn', 'newsbreak' ] as $n ) {
     check( strpos( $xml[ $n ], 'FRESHBODY' ) === false, "$n: a post published seconds ago is inside the settle window" );
 }
 foreach ( $xml as $name => $body ) {
-    check( strpos( $body, 'SECRETBODY' ) === false && strpos( $body, 'Password Protected' ) === false, "$name: password-protected post never ships" );
+    // WordPress's own /feed/ lists the protected post's title (without its
+    // content) — that is core's behaviour, not a Scoreline feed.
+    $absent = strpos( $body, 'SECRETBODY' ) === false && ( $name === 'default feed' || strpos( $body, 'Password Protected' ) === false );
+    check( $absent, "$name: password-protected post never ships" );
 }
 check( strpos( $xml['aigeon'], 'FRESHBODY' ) !== false, 'aigeon: the legacy feed is not delayed' );
 check( count( items( $xml['yahoo'] ) ) === 3, 'yahoo: exactly the three eligible articles', count( items( $xml['yahoo'] ) ) . ' items' );
