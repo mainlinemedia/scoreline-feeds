@@ -1,45 +1,107 @@
-# MMG Raw Feed v3.1.0 — Multi-Network Syndication
+# Scoreline Feeds
 
-One plugin, four compliance-profiled feeds per brand site:
+A WordPress plugin that turns one site into compliance-profiled syndication
+feeds for each network Mainline Media Group distributes to.
 
-| Profile | Route | Replaces | Default |
-|---|---|---|---|
-| Aigeon (legacy raw feed) | `/?feed={slug}-raw-feed` + tag feeds | MMG Raw Feed v2.1.0 | always on |
-| NewsBreak | `/?feed=newsbreak` | NewsBreak RSS Feed v1.3.0 | **off** |
-| MSN | `/feed/msn/` (give MSN the pretty form) | — new | **off** |
-| Yahoo | `/?feed=yahoo` | — new | **off** |
+| Feed | URL (pretty permalinks) | Notes |
+|---|---|---|
+| Aigeon (legacy raw feed) | `/?feed={slug}-raw-feed`, plus tag feeds | always on; shape-compatible with MMG Raw Feed v2 |
+| NewsBreak | `/feed/newsbreak/` | off until enabled |
+| MSN | `/feed/msn/` | off until enabled |
+| Yahoo | `/feed/yahoo/` | off until enabled |
+| Yahoo / MSN slideshows | `/feed/{slug}-slideshows/` | posts tagged `slideshow` |
+| Yahoo / MSN videos | `/feed/{slug}-videos/` | posts tagged `video` |
 
-Spec: `MMG_Raw_Feed_v3.1_Multi_Network_Spec.md` (this folder). Plugin source: `mmg-raw-feed/`.
+Networks type each source, so articles, slideshows and videos are separate
+URLs registered separately with the partner. The settings page shows the
+exact URL to hand over for each.
 
-## Install (per site) — zero-downtime path
+Requires WordPress 5.8+, PHP 7.4+ with the `dom` and `mbstring` extensions.
 
-The old **NewsBreak RSS Feed plugin can stay active** during migration — v3 detects it and automatically defers on `?feed=newsbreak` and the default-feed enhancement, so live syndication is never interrupted:
+## Install and update
 
-1. Deactivate old "MMG Raw Feed" v2.x only (fatal name collision with v3), activate v3. The Aigeon raw-feed URL swaps implementations in place. Leave "NewsBreak RSS Feed" v1.x running.
-2. Enable the NewsBreak network with slug `newsbreak-v3` → validate `/?feed=newsbreak-v3` (diff against the live feed / have NewsBreak validate it).
-3. Cutover when satisfied: deactivate the old NewsBreak plugin, change the slug back to `newsbreak`, save, flush permalinks. The URL NewsBreak polls never changes and never 404s.
+Upload the release zip once (*Plugins → Add New → Upload*). After that the
+plugin updates itself from this repository through WordPress's own update
+screen — no re-uploading. *Plugins → Scoreline Feeds → Enable auto-updates*
+makes it hands-off.
 
-Full replacement (no parallel validation):
+Everything is configured under **Settings → Scoreline Feeds**. Feed URLs
+register themselves; there is no need to re-save Permalinks.
 
-1. **Deactivate BOTH old plugins first** — "MMG Raw Feed" (v2.x) and "NewsBreak RSS Feed" (v1.x). v2 shares function names with v3; simultaneous activation is a fatal error.
-2. Upload/activate `mmg-raw-feed-v3.1.0.zip`.
-3. Settings → Permalinks → Save (flushes rewrites).
-4. Verify the legacy raw-feed URL and `?feed=newsbreak` against pre-upgrade captures. Expected deltas ONLY: unescaped entities inside CDATA (the v2 double-escaping bug is fixed), `dcterms:modified` on edited posts, correct GMT pubDates on the NewsBreak feed, and lazy-load/tracking attributes stripped from body HTML.
-5. Existing settings carry over untouched (`mmgrf_options` / `mmgrf_tag_feeds` keys unchanged).
+## Operating it
 
-## Enabling networks
+- **Skip log** (settings page) and **Tools → Syndication Log** (writers see
+  their own posts) answer "why isn't this article on the network?" — partners
+  reject silently, so this is the only place that answer lives. Each entry has
+  a stable code and a plain-language detail.
+- **Syndication readiness** box in the post editor predicts, before
+  publishing, what each enabled network will do with the post.
+- **Syndication** box on each post: MSN short title, per-network exclusion,
+  and the *Sponsored content* master switch.
+- **Tools → Site Health** reports misconfiguration (plain permalinks, missing
+  PHP extensions, a still-active legacy NewsBreak plugin).
+- The `<generator>` element of every feed carries the plugin version, so the
+  deployed version is always visible from the feed itself.
 
-Settings → MMG Raw Feed → Syndication Networks. Everything defaults off. Recommended order: NewsBreak on one low-volume brand → diff at partner → MSN (Game Day Chatter first; it's already in Partner Hub) → Yahoo (needs Yahoo onboarding).
+### Authoring slideshows and videos
 
-Per-post controls live in the **Syndication** box on the post editor (score, MSN short title, per-network exclusion, sponsored-content master switch). Getty/licensed images: flag "MMG does NOT hold syndication rights" on the attachment — the image is withheld from MSN and the item skips rather than shipping a rights-violating image.
+- **Slideshow:** a normal post tagged `slideshow`. Each **H2 followed by a
+  photo** is one slide; the paragraphs under it are the slide's description.
+  The featured image is the cover. Yahoo needs 3 slides, MSN 4, every photo at
+  least 1280×720 (JPEG, PNG or GIF).
+- **Video:** a normal post tagged `video` containing a video uploaded to this
+  site's media library (MP4 or MOV; at least 1280×720, 720×1280 vertical or
+  1080×1080 square) and a featured image for the thumbnail.
 
-**Skip log** (bottom of the settings page) answers "why isn't this article on X" — MSN and Yahoo both reject silently on their side.
+A post with either tag ships **only** through its typed feed on Yahoo and
+MSN. The marker tags can be changed in settings.
 
-## Tests
+## Development
 
-No WordPress install needed:
+No WordPress install is needed for the fast suite:
 
 ```
-php tests/run-tests.php      # 66 tests: emitter, sanitizer, profiles, pipeline, routing, parity
-php tests/render-samples.php # renders samples/sample-{aigeon,newsbreak,msn,yahoo}.xml from fixtures
+php tests/run-tests.php          # full suite against WordPress stubs
+php tests/check-release.php      # version / manifest / changelog agree
+php tests/render-samples.php     # writes samples/sample-*.xml
 ```
+
+`MMGRF_TEST_ORDER=reverse` or `shuffle[:seed]` runs the suite in another
+order. A warning, notice or deprecation fails the test that triggered it.
+
+CI (`.github/workflows/ci.yml`) runs that suite on PHP 7.4 through 8.4 and an
+**integration job against real WordPress**: it installs core, seeds real
+posts and media (`tests/integration/seed.php`) and asserts the feeds over
+HTTP (`tests/integration/assert.php`). Bugs that depend on what core really
+returns — entity-encoded names, `-scaled` uploads, sticky posts, core
+answering conditional GETs first — are only visible there.
+
+### Layout
+
+```
+scoreline-feeds/
+  scoreline-feeds.php        bootstrap, feed routes, default-feed enhancement
+  includes/emitter.php       XML escaping and CDATA
+  includes/sanitizer.php     DOM sanitizer, body-image pass, pruning, link guard
+  includes/pipeline.php      query, item build, render, cache, conditional GET
+  includes/slideshow.php     slideshow feeds
+  includes/video-feed.php    video feeds
+  includes/validator.php     skip log
+  includes/options.php       options and defaults
+  includes/admin.php         settings page, meta box, media rights field
+  includes/syndication-check.php   editor readiness check (REST + meta box)
+  includes/health.php        misconfiguration notices, Site Health test
+  includes/updater.php       self-update from this repository
+  profiles/                  one class per network (rules, gates, item shape)
+```
+
+### Releasing
+
+1. Bump `Version:` and `MMGRF_VERSION` in `scoreline-feeds/scoreline-feeds.php`;
+   add the `CHANGELOG.md` entry.
+2. Open a pull request; merge when CI is green.
+3. `php tests/build-zip.php` → `gh release create vX.Y.Z scoreline-feeds-X.Y.Z.zip`.
+4. Update `manifest.json` to the new version and push. **This last commit is
+   the fleet rollout** — every site sees the update on its next check. To
+   stage a release, install the zip on one site first and bump the manifest
+   only after its live feeds have been checked.

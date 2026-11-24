@@ -64,6 +64,15 @@ function item_image_urls( $item_xml ) {
 
 function run_all_tests() {
     $r = &$GLOBALS['mmgrf_runner'];
+    // A warning, notice or deprecation anywhere in the plugin fails the
+    // test that triggered it (that is how a PHP-version regression shows up
+    // in CI). @-suppressed calls are respected.
+    set_error_handler( function( $errno, $errstr, $errfile, $errline ) {
+        if ( ! ( error_reporting() & $errno ) ) {
+            return false;
+        }
+        throw new ErrorException( $errstr, 0, $errno, $errfile, $errline );
+    } );
     // MMGRF_TEST_ORDER=reverse|shuffle[:seed] — every test must pass in any
     // order (shared state once made the suite green only alphabetically).
     $order = (string) getenv( 'MMGRF_TEST_ORDER' );
