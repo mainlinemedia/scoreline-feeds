@@ -719,11 +719,16 @@ function mmgrf_build_items( $profile, $opts, $filters ) {
         $not_cats = array_merge( $not_cats, $policy['cats'] );
         $not_tags = array_merge( $not_tags, $policy['tags'] );
         $missing  = array_merge( $missing, $policy['missing'] );
-        // Slideshow and video posts ship through their typed feeds, never as
-        // articles. (That includes NewsBreak, which has no typed feed: it
-        // has always been withheld there, and starting to ship those posts
-        // on an update would deliver a backlog that cannot be recalled.)
-        $not_tags = array_merge( $not_tags, mmgrf_slideshow_marker_ids(), mmgrf_video_marker_ids() );
+        // On networks with typed feeds (Yahoo, MSN) a slideshow or video
+        // post ships through that feed, never also as an article. NewsBreak
+        // has no gallery type and takes video inside the article body
+        // (its feed spec: "Put video and audio in <content:encoded> using
+        // HTML <video>, <audio> or <iframe>"), so there both are ordinary
+        // articles — a format is withheld only where the network does not
+        // accept it (Austin, 2026-11-24).
+        if ( in_array( $network, MMGRF_TYPED_NETWORKS, true ) ) {
+            $not_tags = array_merge( $not_tags, mmgrf_slideshow_marker_ids(), mmgrf_video_marker_ids() );
+        }
     }
     mmgrf_log_missing_exclusions( $log_label, $missing );
 
