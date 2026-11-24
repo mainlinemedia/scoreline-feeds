@@ -3,6 +3,48 @@
 Release notes for Scoreline Feeds. Versions before 3.6.0 are described in the
 GitHub release for each tag.
 
+## 3.7.0 — 2026-11-24
+
+Interface release. Governing rule: **a writer never has to do anything for an
+article to be syndicated.** Publishing is the only action; everything the
+plugin shows a writer is information, never a step.
+
+### For writers and editors
+
+- **One Syndication box** in the editor instead of two. It opens with "Sent
+  automatically — nothing to do here" and one line per network: sent, or not
+  sent and why. The only controls (keeping an article out, the optional MSN
+  card title) sit behind a closed "Options" disclosure, which opens by itself
+  only when an article is already being kept out.
+- **A long headline no longer needs a writer.** MSN requires a short card
+  title for headlines over 150 characters; that used to mean a skipped
+  article unless someone filled in a box. The card title is now generated
+  automatically (the writer's own is used if they set one).
+- **Syndication column in the Posts list**: a tick when an article was sent
+  everywhere, or which network did not take it and why.
+- **Syndication Log in plain language**: what happened, what (if anything)
+  to do about it, local time, and filters by network, outcome and article.
+
+### For operators
+
+- **Settings page reorganised into tabs** — Networks, Content rules, Email
+  feed, Tag feeds, Activity log — with the networks first.
+- **Each network is a card** with an on/off switch, the exact feed URLs to
+  hand the partner (Copy and Open buttons), how many items each feed last
+  served and when, and how many articles were not sent this week.
+- **Menus instead of typed keywords** for link actions and image sizes, and
+  every category/tag field shows the names it matched — and flags, in red,
+  a slug that matches nothing.
+- Wording is neutral for client sites (no internal company or partner names
+  in anything a writer sees).
+
+### Engineering
+
+- A test proves that saving the settings page unchanged changes nothing
+  (every stored setting has a field), and another that every log code has a
+  plain-language entry.
+- The integration job now renders every admin screen on real WordPress.
+
 ## 3.6.1 — 2026-11-24
 
 - **NewsBreak now receives posts tagged `slideshow` or `video` as ordinary

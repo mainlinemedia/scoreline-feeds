@@ -1,10 +1,50 @@
-/* Syndication readiness panel — warning-toned, not alarm-toned. */
-#mmgrf-syn-panel .mmgrf-syn-ok {
-	color: #4a5568;
-	margin: 4px 0;
+/* The Syndication box in the post editor. Informational by design: calm
+   colours, nothing that reads as a required step. */
+
+#mmgrf-syn-panel .mmgrf-syn-lead {
+	margin: 2px 0 8px;
+	color: #1d2327;
+	font-size: 12.5px;
+	line-height: 1.45;
 }
+#mmgrf-syn-panel .mmgrf-syn-muted,
+.mmgrf-syn-options .mmgrf-syn-muted {
+	color: #787c82;
+	font-size: 12px;
+	line-height: 1.45;
+}
+#mmgrf-syn-panel .mmgrf-syn-nets {
+	margin: 0 0 8px;
+	padding: 0;
+	list-style: none;
+}
+#mmgrf-syn-panel .mmgrf-syn-nets li {
+	display: block;
+	margin: 0;
+	padding: 5px 0 5px 24px;
+	position: relative;
+	font-size: 12.5px;
+	line-height: 1.4;
+	border-top: 1px solid #f0f0f1;
+}
+#mmgrf-syn-panel .mmgrf-syn-nets li:first-child { border-top: 0; }
+#mmgrf-syn-panel .mmgrf-syn-nets .dashicons {
+	position: absolute;
+	left: 0;
+	top: 5px;
+	font-size: 17px;
+	width: 17px;
+	height: 17px;
+}
+#mmgrf-syn-panel .is-ok .dashicons,
+#mmgrf-syn-panel .is-note .dashicons { color: #00a32a; }
+#mmgrf-syn-panel .is-blocked .dashicons { color: #b32d2e; }
+#mmgrf-syn-panel .is-excluded .dashicons { color: #8c8f94; }
+#mmgrf-syn-panel .mmgrf-syn-state { color: #b32d2e; }
+#mmgrf-syn-panel .is-excluded .mmgrf-syn-state { color: #646970; }
+#mmgrf-syn-panel .mmgrf-syn-why { color: #646970; }
 #mmgrf-syn-panel .mmgrf-syn-warn {
-	background: #fef8ee;
+	background: #fcf9e8;
 	border-left: 3px solid #dba617;
 	padding: 6px 8px;
 	margin: 6px 0;
@@ -12,7 +52,24 @@
 	font-size: 12px;
 	line-height: 1.5;
 }
-#mmgrf-syn-panel .mmgrf-syn-muted {
-	color: #8c8f94;
-	font-style: italic;
+#mmgrf-syn-panel .mmgrf-syn-ok { color: #4a5568; margin: 4px 0; }
+
+.mmgrf-syn-options {
+	margin-top: 10px;
+	border-top: 1px solid #dcdcde;
+	padding-top: 8px;
 }
+.mmgrf-syn-options > summary {
+	cursor: pointer;
+	color: #2271b1;
+	font-size: 12.5px;
+}
+.mmgrf-syn-options fieldset { margin: 10px 0; padding: 0; border: 0; }
+.mmgrf-syn-options legend { font-weight: 600; font-size: 12.5px; padding: 0; margin-bottom: 4px; }
+.mmgrf-syn-options fieldset label { display: block; margin: 3px 0; font-size: 12.5px; }
+.mmgrf-syn-options .mmgrf-syn-sponsored { margin-top: 8px; padding-top: 8px; border-top: 1px solid #f0f0f1; }
+.mmgrf-syn-options p { margin: 10px 0; }
+.mmgrf-syn-options p > label { display: block; font-weight: 600; font-size: 12.5px; margin-bottom: 3px; }
+.mmgrf-syn-options input[type="text"],
+.mmgrf-syn-options input[type="number"] { width: 100%; }
+.mmgrf-syn-options p > .mmgrf-syn-muted { display: block; margin-top: 3px; }

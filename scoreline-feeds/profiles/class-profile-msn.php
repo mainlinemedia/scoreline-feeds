@@ -78,6 +78,9 @@ class MMGRF_Profile_MSN extends MMGRF_Profile_Base {
         $pass = mmgrf_process_body_images( $item['san']['html'], [ 'drop_no_rights' => true ] );
         $item['inline_image_log'] = $pass['events'];
         $item['san']['html']      = mmgrf_prune_empty_nodes( $pass['html'] );
+        if ( $this->short_title_is_automatic( $item ) ) {
+            $item['inline_image_log'][] = [ 'code' => 'title_auto_shortened', 'detail' => mb_strlen( trim( (string) $item['title'] ) ) . '-character headline; card title sent as "' . $this->short_title( $item ) . '"' ];
+        }
         $img = $item['image'];
         if ( $img ) {
             if ( ! empty( $img['no_synd_rights'] ) ) {
@@ -106,7 +109,7 @@ class MMGRF_Profile_MSN extends MMGRF_Profile_Base {
             return $this->fail( 'title_too_short', "{$title_len} chars; MSN requires more than 20" );
         }
         if ( $title_len > self::TITLE_MAX && $this->short_title( $item ) === '' ) {
-            return $this->fail( 'title_too_long_no_short_title', "{$title_len} chars; set a short title (150 characters or fewer) in the Syndication box" );
+            return $this->fail( 'title_too_long_no_short_title', "{$title_len} chars and no short title could be derived" );
         }
         $now = time();
         if ( $item['pub_ts'] > $now ) {
@@ -127,10 +130,28 @@ class MMGRF_Profile_MSN extends MMGRF_Profile_Base {
         return $this->ok();
     }
 
-    /** The post's short title when it is usable; '' otherwise. An over-long one must not unlock the >150 path. */
+    /**
+     * The card title MSN gets alongside an over-long headline.
+     *
+     * The writer's own short title when one is set and usable; otherwise, for
+     * a headline over 150 characters, one cut automatically at a word
+     * boundary — a qualified article must never be withheld because nobody
+     * filled in an optional box. '' when the headline needs none.
+     */
     private function short_title( $item ) {
         $short = trim( (string) ( $item['short_title'] ?? '' ) );
-        return ( $short !== '' && mb_strlen( $short ) <= self::TITLE_MAX ) ? $short : '';
+        if ( $short !== '' && mb_strlen( $short ) <= self::TITLE_MAX ) {
+            return $short;
+        }
+        $title = trim( (string) ( $item['title'] ?? '' ) );
+        return mb_strlen( $title ) > self::TITLE_MAX ? mmgrf_msn_short_title( $title ) : '';
+    }
+
+    /** True when short_title() had to derive the card title itself. */
+    private function short_title_is_automatic( $item ) {
+        $short = trim( (string) ( $item['short_title'] ?? '' ) );
+        $own   = $short !== '' && mb_strlen( $short ) <= self::TITLE_MAX;
+        return ! $own && mb_strlen( trim( (string) ( $item['title'] ?? '' ) ) ) > self::TITLE_MAX;
     }
 
     public function render_item( $item, $opts ) {

@@ -1,0 +1,103 @@
+/* Scoreline Feeds — settings page, activity log, Posts-list column.
+   Uses WordPress admin colours and components; adds only what core lacks. */
+
+.mmgrf-wrap { max-width: 1100px; }
+.mmgrf-wrap .mmgrf-version { font-size: 13px; font-weight: 400; color: #787c82; margin-left: 4px; }
+.mmgrf-wrap .mmgrf-intro { font-size: 14px; color: #50575e; margin: 6px 0 14px; }
+.mmgrf-wrap .mmgrf-tabs { margin-bottom: 18px; }
+.mmgrf-wrap h2 { margin: 26px 0 4px; font-size: 16px; }
+.mmgrf-wrap .mmgrf-panel > h2:first-child { margin-top: 4px; }
+.mmgrf-wrap .mmgrf-h2-note { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: #50575e; background: #f0f0f1; border-radius: 3px; padding: 2px 6px; margin-left: 6px; vertical-align: middle; }
+.mmgrf-wrap .mmgrf-section-note { color: #50575e; max-width: 760px; margin: 2px 0 6px; }
+.mmgrf-wrap .form-table th { width: 220px; padding-top: 16px; }
+.mmgrf-wrap .form-table td { padding-top: 12px; padding-bottom: 12px; }
+.mmgrf-wrap .mmgrf-suffix { color: #646970; }
+.mmgrf-wrap input.mmgrf-utm { width: 110px; }
+
+/* With JavaScript, only the current tab's panel shows; without it, all do. */
+.mmgrf-js .mmgrf-panel { display: none; }
+.mmgrf-js .mmgrf-panel.is-current { display: block; }
+.mmgrf-js .mmgrf-save.is-hidden { display: none; }
+.mmgrf-save { margin: 22px 0 8px; padding-top: 16px; border-top: 1px solid #dcdcde; }
+
+/* Cards */
+.mmgrf-card { background: #fff; border: 1px solid #c3c4c7; border-left-width: 4px; border-radius: 2px; padding: 16px 20px 12px; margin: 0 0 14px; box-shadow: 0 1px 1px rgba(0,0,0,.04); }
+.mmgrf-card.is-on { border-left-color: #00a32a; }
+.mmgrf-card.is-off { border-left-color: #c3c4c7; }
+.mmgrf-card h3 { margin: 0 0 8px; }
+.mmgrf-card-head { display: flex; align-items: center; gap: 10px; }
+.mmgrf-card .description { margin: 6px 0 10px; }
+.mmgrf-switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.mmgrf-switch input[type="checkbox"] { margin: 0; }
+.mmgrf-switch-name { font-size: 16px; font-weight: 600; color: #1d2327; }
+.mmgrf-badge { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; border-radius: 9px; padding: 2px 9px; }
+.mmgrf-badge.is-on { background: #edfaef; color: #007017; }
+.mmgrf-badge.is-off { background: #f0f0f1; color: #646970; }
+.mmgrf-off-note { color: #646970; font-style: italic; margin: 0 0 8px; }
+
+/* Feed URL rows */
+.mmgrf-feeds { border-collapse: collapse; width: 100%; margin: 4px 0 8px; }
+.mmgrf-feeds th { text-align: left; font-weight: 600; width: 96px; padding: 7px 10px 7px 0; vertical-align: middle; white-space: nowrap; }
+.mmgrf-feeds td { padding: 7px 14px 7px 0; vertical-align: middle; }
+.mmgrf-feeds tr + tr th, .mmgrf-feeds tr + tr td { border-top: 1px solid #f0f0f1; }
+.mmgrf-feeds-solo { width: auto; margin-bottom: 0; }
+.mmgrf-url { background: #f6f7f7; border: 1px solid #dcdcde; border-radius: 3px; padding: 4px 8px; font-size: 12.5px; user-select: all; word-break: break-all; }
+.mmgrf-copy.is-copied { color: #007017; border-color: #00a32a; }
+.mmgrf-open { margin-left: 6px; text-decoration: none; }
+.mmgrf-status { font-size: 12.5px; white-space: nowrap; }
+.mmgrf-status::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+.mmgrf-status.is-live { color: #1d2327; }
+.mmgrf-status.is-live::before { background: #00a32a; }
+.mmgrf-status.is-idle { color: #646970; }
+.mmgrf-status.is-idle::before { background: #c3c4c7; }
+
+/* Advanced disclosure */
+.mmgrf-advanced { margin-top: 4px; border-top: 1px solid #f0f0f1; padding-top: 8px; }
+.mmgrf-advanced > summary { cursor: pointer; color: #2271b1; font-size: 13px; padding: 2px 0; }
+.mmgrf-advanced > summary:hover { color: #135e96; }
+.mmgrf-advanced .form-table { margin-top: 4px; }
+
+/* Field feedback */
+.mmgrf-field-ok, .mmgrf-field-error { margin: 6px 0 0; font-size: 12.5px; }
+.mmgrf-field-ok { color: #007017; }
+.mmgrf-field-error { color: #b32d2e; font-weight: 600; }
+.mmgrf-field-ok .dashicons, .mmgrf-field-error .dashicons { font-size: 16px; width: 16px; height: 16px; vertical-align: -3px; }
+
+/* Log */
+.mmgrf-log-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0 8px; }
+.mmgrf-log-filters input[type="search"] { min-width: 220px; }
+.mmgrf-log-count { color: #646970; font-size: 12.5px; }
+.mmgrf-log th { white-space: nowrap; }
+.mmgrf-log td { vertical-align: top; }
+.mmgrf-log .mmgrf-log-when { white-space: nowrap; color: #50575e; }
+.mmgrf-log .mmgrf-log-post { max-width: 260px; }
+.mmgrf-log .mmgrf-log-detail { color: #646970; font-size: 12px; word-break: break-word; }
+.mmgrf-log .mmgrf-log-code { color: #a7aaad; font-size: 11px; background: none; padding: 0; }
+.mmgrf-log tr.is-filtered { display: none; }
+.mmgrf-pill { display: inline-block; font-size: 11.5px; font-weight: 600; border-radius: 9px; padding: 2px 9px; white-space: nowrap; }
+.mmgrf-pill.is-skip { background: #fcf0f1; color: #b32d2e; }
+.mmgrf-pill.is-warn { background: #fcf9e8; color: #8a6100; }
+.mmgrf-log-clear { margin-top: 10px; display: flex; align-items: center; gap: 10px; }
+.mmgrf-empty { color: #646970; font-style: italic; background: #fff; border: 1px solid #dcdcde; border-radius: 2px; padding: 14px 16px; max-width: 760px; }
+
+/* Tag feeds */
+.mmgrf-tagfeeds { margin: 10px 0 18px; }
+.mmgrf-tagfeeds td { vertical-align: middle; }
+.mmgrf-row-actions { white-space: nowrap; }
+.mmgrf-row-actions a + a { margin-left: 10px; }
+.mmgrf-danger { color: #b32d2e; }
+.mmgrf-danger:hover { color: #8a2424; }
+
+/* Posts list column */
+.column-mmgrf_syndication { width: 150px; }
+.mmgrf-col { font-size: 12px; line-height: 1.5; }
+.mmgrf-col.is-sent .dashicons { color: #00a32a; }
+.mmgrf-col.is-none { color: #a7aaad; }
+.mmgrf-col.is-withheld { color: #8a6100; }
+.mmgrf-col.is-excluded { color: #646970; }
+
+@media (max-width: 782px) {
+	.mmgrf-feeds th, .mmgrf-feeds td { display: block; width: auto; padding: 3px 0; border: 0 !important; }
+	.mmgrf-feeds tr { display: block; padding: 8px 0; border-top: 1px solid #f0f0f1; }
+	.mmgrf-status { white-space: normal; }
+}
