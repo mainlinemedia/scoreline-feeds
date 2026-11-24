@@ -53,18 +53,12 @@
 	}
 
 	function render( result ) {
-		if ( ! result || ! result.enabled ) {
+		if ( ! result || ! result.enabled || typeof result.html !== 'string' ) {
 			return;
 		}
-		panel.className = '';
-		panel.textContent = '';
-		if ( ! result.issues || result.issues.length === 0 ) {
-			panel.appendChild( line( 'mmgrf-syn-ok', '✓ Ready for syndication' ) );
-			return;
-		}
-		result.issues.forEach( function( issue ) {
-			panel.appendChild( line( 'mmgrf-syn-warn', String( issue.message || '' ) ) );
-		} );
+		// The same markup the server prints on page load, built and escaped
+		// by mmgrf_syndication_panel_html() — one renderer, two entry points.
+		panel.innerHTML = result.html;
 	}
 
 	function fullCheck( thenMaybeNotice ) {

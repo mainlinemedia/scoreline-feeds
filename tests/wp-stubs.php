@@ -299,6 +299,36 @@ function setup_postdata( $post ) { $GLOBALS['mmgrf_test']['current_post'] = is_o
 function wp_reset_postdata() { $GLOBALS['mmgrf_test']['current_post'] = null; $GLOBALS['post'] = null; }
 function get_the_ID() { return $GLOBALS['mmgrf_test']['current_post']; }
 function is_admin() { return false; }
+// ── Admin rendering (enough of core to render the plugin's screens) ──
+function settings_fields( $group ) {
+    echo '<input type="hidden" name="option_page" value="' . esc_attr( $group ) . '"><input type="hidden" name="action" value="update">';
+    wp_nonce_field( $group . '-options' );
+}
+function wp_nonce_field( $action = -1, $name = '_wpnonce', $referer = true, $echo = true ) {
+    $html = '<input type="hidden" name="' . esc_attr( $name ) . '" value="valid-nonce-' . esc_attr( $action ) . '"><input type="hidden" name="_wp_http_referer" value="/wp-admin/options-general.php?page=scoreline-feeds">';
+    if ( $echo ) echo $html;
+    return $html;
+}
+function wp_nonce_url( $url, $action = -1 ) { return $url . ( strpos( $url, '?' ) === false ? '?' : '&' ) . '_wpnonce=valid-nonce-' . $action; }
+function submit_button( $text = 'Save Changes', $type = 'primary', $name = 'submit', $wrap = true ) {
+    $cls = implode( ' ', array_map( fn( $t ) => 'button-' . $t, explode( ' ', $type ) ) );
+    $btn = '<input type="submit" name="' . esc_attr( $name ) . '" id="' . esc_attr( $name ) . '" class="button ' . esc_attr( $cls ) . '" value="' . esc_attr( $text ) . '">';
+    echo $wrap ? '<p class="submit">' . $btn . '</p>' : $btn;
+}
+function get_intermediate_image_sizes() { return [ 'thumbnail', 'medium', 'medium_large', 'large', '1536x1536', '2048x2048' ]; }
+function human_time_diff( $from, $to = 0 ) {
+    $d = abs( ( $to ?: time() ) - $from );
+    if ( $d < 60 ) return max( 1, $d ) . ' seconds';
+    if ( $d < 3600 ) return round( $d / 60 ) . ' mins';
+    if ( $d < 86400 ) return round( $d / 3600 ) . ' hours';
+    return round( $d / 86400 ) . ' days';
+}
+function wp_kses( $html, $allowed ) { return strip_tags( (string) $html, '<' . implode( '><', array_keys( $allowed ) ) . '>' ); }
+function plugin_dir_url( $file ) { return 'https://example-brand.com/wp-content/plugins/' . basename( dirname( $file ) ) . '/'; }
+function register_setting( ...$a ) {}
+function add_meta_box( ...$a ) { $GLOBALS['mmgrf_test']['meta_boxes'][] = $a[0]; }
+function wp_enqueue_style( ...$a ) {}
+function wp_enqueue_script( ...$a ) {}
 function wp_unslash( $v ) { return is_array( $v ) ? array_map( 'wp_unslash', $v ) : ( is_string( $v ) ? stripslashes( $v ) : $v ); }
 function wp_is_post_revision( $post_id ) { $p = get_post( is_object( $post_id ) ? $post_id->ID : $post_id ); return ( $p && $p->post_type === 'revision' ) ? (int) ( $p->post_parent ?? 0 ) : false; }
 function wp_is_post_autosave( $post_id ) { $p = get_post( is_object( $post_id ) ? $post_id->ID : $post_id ); return ( $p && $p->post_type === 'revision' && strpos( (string) $p->post_name, 'autosave' ) !== false ) ? (int) ( $p->post_parent ?? 0 ) : false; }
@@ -307,7 +337,7 @@ function add_settings_error( $setting, $code, $message, $type = 'error' ) { $GLO
 function esc_textarea( $s ) { return htmlspecialchars( (string) $s, ENT_QUOTES, 'UTF-8' ); }
 function admin_url( $path = '' ) { return home_url( '/wp-admin/' . ltrim( $path, '/' ) ); }
 function get_post_status( $post ) { $p = is_object( $post ) ? $post : get_post( $post ); return $p ? $p->post_status : false; }
-function wp_date( $format, $ts ) { return gmdate( $format, $ts ); }
+function wp_date( $format, $ts = null ) { return gmdate( $format, $ts ?? time() ); }
 function current_user_can( $cap, ...$args ) {
     $caps = $GLOBALS['mmgrf_test']['caps'] ?? null;
     return $caps === null ? true : in_array( $cap, $caps, true );

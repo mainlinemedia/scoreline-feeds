@@ -8,6 +8,7 @@
  *
  * Codes in use
  *   items:      title_empty, title_too_short, title_too_long_no_short_title,
+ *               title_auto_shortened,
  *               description_below_word_floor, body_below_word_floor,
  *               body_empty, pubdate_future, pubdate_too_old, link_missing,
  *               guid_missing, embed_review, render_error
@@ -140,6 +141,73 @@ function mmgrf_skip_log_flush() {
         return ( $b['ts'] ?? 0 ) <=> ( $a['ts'] ?? 0 );
     } );
     update_option( MMGRF_SKIP_LOG_OPTION, array_slice( $log, 0, MMGRF_SKIP_LOG_CAP ), 'no' ); // never autoload 200 entries on every page view
+}
+
+/**
+ * Plain-language meaning of every log code: [what happened, what to do].
+ * The log is read by writers and editors, not by developers — a snake_case
+ * code alone does not tell anyone what to fix. Every code the plugin can
+ * emit MUST have an entry here (enforced by the test suite).
+ */
+function mmgrf_code_catalog() {
+    return [
+        // Items
+        'title_empty'                   => [ 'Headline missing or too short', 'Give the article a headline of at least two words.' ],
+        'title_too_short'               => [ 'Headline too short for MSN', 'MSN needs a headline longer than 20 characters.' ],
+        'title_too_long_no_short_title' => [ 'Headline too long for MSN', 'Shorten the headline to 150 characters or fewer.' ],
+        'title_auto_shortened'          => [ 'Long headline shortened for MSN', 'Nothing required. MSN was sent an automatically shortened card title; set your own under Syndication → Options if you prefer.' ],
+        'description_below_word_floor'  => [ 'Summary too short', 'Add a short excerpt, or an opening paragraph, of at least a few words.' ],
+        'body_below_word_floor'         => [ 'Article under 150 words', 'Yahoo only takes articles of 150 words or more. Nothing to fix if this is a short item by design.' ],
+        'body_empty'                    => [ 'Article has no text', 'The article body was empty after cleaning. Add body text.' ],
+        'pubdate_future'                => [ 'Publish date is in the future', 'It will be sent once the publish date has passed.' ],
+        'pubdate_too_old'               => [ 'Older than MSN accepts', 'MSN only takes articles published in the last 365 days. Nothing to fix.' ],
+        'link_missing'                  => [ 'Article has no link', 'Re-save the article so WordPress gives it a permalink.' ],
+        'guid_missing'                  => [ 'Article has no link', 'Re-save the article so WordPress gives it a permalink.' ],
+        'embed_review'                  => [ 'Contains embeds', 'Nothing required. Yahoo sometimes displays embedded posts and videos differently; worth a glance on Yahoo.' ],
+        'render_error'                  => [ 'Article could not be processed', 'Something in this article (often a shortcode or block from another plugin) failed. The rest of the feed was sent. Re-save the article; if it persists, tell your site administrator.' ],
+        // Lead image
+        'no_featured_image'             => [ 'No usable featured image', 'Set a featured image. NewsBreak and MSN will not take an article without one.' ],
+        'image_below_minimum'           => [ 'Featured image too small', 'Upload a larger image: at least 1280×720 for Yahoo, 640×360 for MSN.' ],
+        'image_below_recommended'       => [ 'Featured image smaller than MSN recommends', 'Nothing required. MSN prefers 1280×720 or larger.' ],
+        'image_over_size_limit'         => [ 'Featured image file too large', 'Re-export the image under 5 MB (2 MB for MSN).' ],
+        'image_dimensions_unknown'      => [ 'Featured image size could not be read', 'Re-upload the image through the media library.' ],
+        'image_file_missing'            => [ 'Featured image file is missing', 'The image was edited or replaced and its file is gone. Re-upload it and set it as the featured image again.' ],
+        'image_format_unsupported'      => [ 'Image format not accepted', 'Use a JPEG, PNG or GIF image.' ],
+        'no_syndication_rights'         => [ 'Image marked as not cleared for syndication', 'Use an image we hold syndication rights to, or clear the flag on the image if it was set by mistake.' ],
+        // Body
+        'inline_image_below_minimum'    => [ 'Small image removed from the Yahoo version', 'Nothing required. To keep it on Yahoo, upload it at 1280×720 or larger.' ],
+        'inline_image_unresolvable'     => [ 'Image hosted on another site', 'Nothing required. For reliable display, upload the image to this site instead of linking to it.' ],
+        'inline_image_rewritten'        => [ 'Image upgraded to a larger size', 'Nothing required.' ],
+        'inline_image_duplicate'        => [ 'Repeated photo removed', 'Nothing required. The same photo appeared more than once; partners flag duplicates, so one copy was sent.' ],
+        'affiliate_domain_matched'      => [ 'Links to a betting or affiliate site', 'Yahoo prohibits these links. Remove the link to send the article to Yahoo.' ],
+        'affiliate_path_matched'        => [ 'Promotional link removed for Yahoo', 'Nothing required. The link was taken out of the Yahoo version.' ],
+        // Slideshows
+        'slide_missing_image'           => [ 'Slide has no photo', 'Add a photo directly under that heading.' ],
+        'slide_missing_title'           => [ 'Slide heading has no text', 'Give the heading (H2) some text.' ],
+        'slide_image_unresolvable'      => [ 'Slide photo is hosted on another site', 'Upload the photo to this site\'s media library.' ],
+        'slide_below_minimum'           => [ 'Slide photo too small', 'Upload the photo at 1280×720 or larger.' ],
+        'slide_duplicate_image'         => [ 'Same photo used on two slides', 'Use a different photo for each slide.' ],
+        'slideshow_too_few_slides'      => [ 'Not enough slides', 'A slideshow needs at least 3 slides for Yahoo and 4 for MSN. A slide is a heading (H2) followed by a photo.' ],
+        'slideshow_layout_ambiguous'    => [ 'Could not match photos to headings', 'Place each photo directly under its heading.' ],
+        'thumbnail_duplicates_slide'    => [ 'Cover photo repeats a slide', 'Nothing required. For a cleaner result, set a featured image that is not one of the slides.' ],
+        // Videos
+        'video_missing'                 => [ 'Tagged as video but has no video', 'Add the uploaded video to the article, or remove the video tag.' ],
+        'video_format_unsupported'      => [ 'Video format not accepted', 'Upload the video as an MP4 or MOV file. Audio-only files cannot be sent.' ],
+        'video_not_self_hosted'         => [ 'Video is hosted on another site', 'Upload the video file to this site\'s media library.' ],
+        'video_file_missing'            => [ 'Video file is missing', 'Re-upload the video.' ],
+        'video_below_minimum'           => [ 'Video resolution too low', 'Yahoo needs at least 1280×720 (720×1280 vertical, 1080×1080 square).' ],
+        'video_duration_unknown'        => [ 'Video length could not be read', 'Re-upload the video through the media library.' ],
+        'video_dimensions_unknown'      => [ 'Video size could not be read', 'Nothing required. Re-uploading the video through the media library fixes it.' ],
+        // Settings (administrators)
+        'filter_term_missing'           => [ 'A feed filter points at a category or tag that no longer exists', 'Administrator: correct the category/tag in Scoreline Feeds settings. The feed is empty until then.' ],
+        'exclusion_term_missing'        => [ 'An exclusion points at a category or tag that does not exist', 'Administrator: correct the category/tag in Scoreline Feeds settings. Nothing is being excluded for it.' ],
+    ];
+}
+
+/** [label, fix] for one code; unknown codes fall back to the code itself. */
+function mmgrf_code_info( $code ) {
+    $catalog = mmgrf_code_catalog();
+    return $catalog[ $code ] ?? [ ucfirst( str_replace( '_', ' ', (string) $code ) ), '' ];
 }
 
 function mmgrf_skip_log_get() {

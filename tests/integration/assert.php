@@ -220,6 +220,23 @@ wp( 'post update ' . (int) $it['paged'] . ' --post_status=draft' );
 $c = fetch( $feeds['yahoo'], [ 'If-Modified-Since: ' . $lm ] );
 check( $c['status'] === 200 && strpos( $c['body'], 'Paginated Feature' ) === false, 'yahoo: unpublishing a post is delivered, not hidden behind a 304', "status {$c['status']}" );
 
+// ── Admin screens render on real WordPress (real core helpers, real data) ──
+[ $code, $screens ] = wp( 'eval-file ' . escapeshellarg( __DIR__ . '/render-admin.php' ) );
+check( $code === 0, 'admin screens render without a fatal error', $screens );
+foreach ( [
+    'settings: networks tab'      => 'data-panel="networks"',
+    'settings: feed URL to copy'  => 'data-copy="' . $site . '/feed/yahoo/"',
+    'settings: served status'     => 'last served',
+    'settings: every tab present' => 'data-panel="log"',
+    'settings: image size menu'   => '<option value="medium_large"',
+    'editor box: automatic'       => 'Nothing to do here.',
+    'editor box: verdict per network' => 'mmgrf-syn-nets',
+    'posts list column'           => 'mmgrf-col',
+    'log page'                    => 'Syndication Log',
+] as $label => $needle ) {
+    check( strpos( $screens, $needle ) !== false, $label, substr( $screens, 0, 300 ) );
+}
+
 // ── Nothing blew up quietly ──────────────────────────────────────
 [ , $log ] = wp( 'option get mmgrf_skip_log --format=json' );
 $entries   = json_decode( $log, true ) ?: [];

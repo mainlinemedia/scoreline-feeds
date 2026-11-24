@@ -34,10 +34,13 @@ register themselves; there is no need to re-save Permalinks.
   their own posts) answer "why isn't this article on the network?" — partners
   reject silently, so this is the only place that answer lives. Each entry has
   a stable code and a plain-language detail.
-- **Syndication readiness** box in the post editor predicts, before
-  publishing, what each enabled network will do with the post.
-- **Syndication** box on each post: MSN short title, per-network exclusion,
-  and the *Sponsored content* master switch.
+- **Writers do nothing.** Every published article is sent to every
+  switched-on network automatically; nothing in the editor is a required
+  step. The **Syndication** box on each post only reports, per network,
+  whether the article will be sent and why not — its controls (keep an
+  article out, *Sponsored content*, an optional MSN card title) sit behind a
+  closed *Options* disclosure.
+- The **Syndication** column in the Posts list shows the same at a glance.
 - **Tools → Site Health** reports misconfiguration (plain permalinks, missing
   PHP extensions, a still-active legacy NewsBreak plugin).
 - The `<generator>` element of every feed carries the plugin version, so the
@@ -90,8 +93,9 @@ scoreline-feeds/
   includes/video-feed.php    video feeds
   includes/validator.php     skip log
   includes/options.php       options and defaults
-  includes/admin.php         settings page, meta box, media rights field
-  includes/syndication-check.php   editor readiness check (REST + meta box)
+  includes/admin.php         settings validation, handlers, media rights field
+  includes/admin-ui.php      settings page, activity log, Posts-list column
+  includes/syndication-check.php   the editor's Syndication box (+ REST)
   includes/health.php        misconfiguration notices, Site Health test
   includes/updater.php       self-update from this repository
   profiles/                  one class per network (rules, gates, item shape)

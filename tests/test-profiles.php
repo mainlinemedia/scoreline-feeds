@@ -139,12 +139,22 @@ t( 'msn: title of 20 chars or fewer is rejected', function() {
     expect_contains( $v['reason'], 'title' );
 } );
 
-t( 'msn: title over 150 chars rejected without short title, passes with one', function() {
-    $p = new MMGRF_Profile_MSN();
-    $long = str_repeat( 'Headline words here ', 9 ); // 180 chars
-    expect_false( $p->validate_item( $p->prepare_item( mk_item( [ 'title' => $long ] ) ) )['pass'] );
+t( 'msn: a headline over 150 chars never needs the writer — a card title is derived; their own is used when set', function() {
+    $p    = new MMGRF_Profile_MSN();
+    $long = trim( str_repeat( 'Headline words here ', 9 ) ); // 179 chars
+    $auto = $p->prepare_item( mk_item( [ 'title' => $long ] ) );
+    expect_true( $p->validate_item( $auto )['pass'], 'ships without anyone filling in a box' );
+    preg_match( '#<mi:shortTitle>(.*?)</mi:shortTitle>#', $p->render_item( $auto, profile_opts() ), $m );
+    expect_true( mb_strlen( html_entity_decode( $m[1] ?? '' ) ) > 20 && mb_strlen( html_entity_decode( $m[1] ?? '' ) ) <= 54, 'derived card title is promo-card sized' );
+    expect_true( in_array( 'title_auto_shortened', array_column( $auto['inline_image_log'], 'code' ), true ), 'and it is noted in the log' );
+
     $with = $p->prepare_item( mk_item( [ 'title' => $long, 'short_title' => 'Short version' ] ) );
     expect_true( $p->validate_item( $with )['pass'] );
+    expect_contains( $p->render_item( $with, profile_opts() ), '<mi:shortTitle>Short version</mi:shortTitle>' );
+    expect_false( in_array( 'title_auto_shortened', array_column( $with['inline_image_log'], 'code' ), true ) );
+
+    $normal = $p->prepare_item( mk_item() );
+    expect_not_contains( $p->render_item( $normal, profile_opts() ), 'mi:shortTitle', 'ordinary headlines get no card title' );
 } );
 
 t( 'msn: pubDate older than 365 days or in the future is rejected', function() {

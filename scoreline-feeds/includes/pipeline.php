@@ -957,8 +957,21 @@ function mmgrf_cached_render( $cache_id, callable $render, $log_network = '' ) {
         mmgrf_log_render_error( $log_network !== '' ? $log_network : (string) $cache_id, 0, '(whole feed)', $e );
         return $hit['xml'];
     }
-    set_transient( $key, [ 'sig' => $sig, 'built' => time(), 'xml' => $xml ], MMGRF_CACHE_STALE );
+    set_transient( $key, [ 'sig' => $sig, 'built' => time(), 'items' => substr_count( $xml, '<item>' ), 'xml' => $xml ], MMGRF_CACHE_STALE );
     return $xml;
+}
+
+/**
+ * What the last served copy of a feed contained — for the settings page.
+ * ['built' => unix time, 'items' => count] or null when the feed has not
+ * been requested (by a partner or anyone else) in the last day.
+ */
+function mmgrf_feed_status( $cache_id ) {
+    $hit = get_transient( 'mmgrf_feed_' . md5( (string) $cache_id ) );
+    if ( ! is_array( $hit ) || empty( $hit['built'] ) ) {
+        return null;
+    }
+    return [ 'built' => (int) $hit['built'], 'items' => (int) ( $hit['items'] ?? substr_count( (string) ( $hit['xml'] ?? '' ), '<item>' ) ) ];
 }
 
 /**

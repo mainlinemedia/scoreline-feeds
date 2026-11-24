@@ -344,14 +344,17 @@ t( 'r5 msn: the skip log names the real reason an image was rejected', function(
     expect_false( in_array( 'no_featured_image', $codes, true ), 'not the misleading symptom' );
 } );
 
-t( 'r5 msn: an over-long short title neither ships nor unlocks an over-long headline', function() {
+t( 'r5 msn: an over-long short title is never sent; a usable one is derived instead', function() {
     $p    = mmgrf_get_profile( 'msn' );
-    $long = str_repeat( 'Long headline words ', 10 ); // 200 chars
-    $item = $p->prepare_item( mk_item( [ 'title' => trim( $long ), 'short_title' => str_repeat( 'x', 208 ), 'pub_ts' => time() - 3600, 'mod_ts' => time() - 3600 ] ), profile_opts() );
-    expect_eq( $p->validate_item( $item )['code'], 'title_too_long_no_short_title' );
-    $ok   = $p->prepare_item( mk_item( [ 'short_title' => str_repeat( 'x', 208 ), 'pub_ts' => time() - 3600, 'mod_ts' => time() - 3600 ] ), profile_opts() );
+    $long = trim( str_repeat( 'Long headline words ', 10 ) ); // 199 chars
+    $item = $p->prepare_item( mk_item( [ 'title' => $long, 'short_title' => str_repeat( 'x', 208 ), 'pub_ts' => time() - 3600, 'mod_ts' => time() - 3600 ] ), profile_opts() );
+    expect_true( $p->validate_item( $item )['pass'] );
+    $xml = $p->render_item( $item, profile_opts() );
+    expect_not_contains( $xml, str_repeat( 'x', 60 ), 'the unusable 208-character value is not sent' );
+    expect_contains( $xml, '<mi:shortTitle>Long headline words' );
+    $ok = $p->prepare_item( mk_item( [ 'short_title' => str_repeat( 'x', 208 ), 'pub_ts' => time() - 3600, 'mod_ts' => time() - 3600 ] ), profile_opts() );
     expect_true( $p->validate_item( $ok )['pass'] );
-    expect_not_contains( $p->render_item( $ok, profile_opts() ), 'mi:shortTitle' );
+    expect_not_contains( $p->render_item( $ok, profile_opts() ), 'mi:shortTitle', 'a normal headline needs none' );
 } );
 
 t( 'r5: no author-visible log detail carries an absolute server path', function() {
