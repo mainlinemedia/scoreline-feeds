@@ -64,6 +64,17 @@ function item_image_urls( $item_xml ) {
 
 function run_all_tests() {
     $r = &$GLOBALS['mmgrf_runner'];
+    // MMGRF_TEST_ORDER=reverse|shuffle[:seed] — every test must pass in any
+    // order (shared state once made the suite green only alphabetically).
+    $order = (string) getenv( 'MMGRF_TEST_ORDER' );
+    if ( $order === 'reverse' ) {
+        $r['tests'] = array_reverse( $r['tests'] );
+    } elseif ( strpos( $order, 'shuffle' ) === 0 ) {
+        $seed = (int) ( explode( ':', $order )[1] ?? random_int( 1, 999999 ) );
+        mt_srand( $seed );
+        shuffle( $r['tests'] );
+        fwrite( STDOUT, "Shuffled test order, seed $seed (re-run with MMGRF_TEST_ORDER=shuffle:$seed)\n" );
+    }
     foreach ( $r['tests'] as [ $name, $fn ] ) {
         mmgrf_test_reset();
         try {

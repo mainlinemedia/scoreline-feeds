@@ -43,7 +43,7 @@ function mmgrf_render_skip_log_table( $entries ) {
                 <td><?php echo esc_html( gmdate( 'Y-m-d H:i', $e['ts'] ) ); ?></td>
                 <td><?php echo esc_html( $e['network'] ); ?></td>
                 <td><?php echo esc_html( $e['level'] ?? 'skip' ); ?></td>
-                <td><a href="<?php echo esc_url( admin_url( 'post.php?post=' . (int) $e['post_id'] . '&action=edit' ) ); ?>"><?php echo esc_html( $e['post_title'] ); ?></a></td>
+                <td><?php if ( (int) $e['post_id'] > 0 ) : ?><a href="<?php echo esc_url( admin_url( 'post.php?post=' . (int) $e['post_id'] . '&action=edit' ) ); ?>"><?php echo esc_html( $e['post_title'] ); ?></a><?php else : ?><?php echo esc_html( $e['post_title'] ); ?><?php endif; ?></td>
                 <td><code><?php echo esc_html( $e['code'] ?? ( $e['reason'] ?? '' ) ); ?></code></td>
                 <td><?php echo esc_html( $e['detail'] ?? '' ); ?></td>
             </tr>
@@ -58,7 +58,7 @@ function mmgrf_handle_clear_skip_log() {
     if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Unauthorized' );
     check_admin_referer( 'mmgrf_clear_skip_log' );
     mmgrf_skip_log_clear();
-    wp_redirect( admin_url( 'options-general.php?page=scoreline-feeds#skip-log' ) );
+    wp_safe_redirect( admin_url( 'options-general.php?page=scoreline-feeds#skip-log' ) );
     exit;
 }
 
@@ -71,7 +71,7 @@ function mmgrf_register_settings() {
     add_settings_section( 'mmgrf_filter', 'Content Filters', '__return_false', 'scoreline-feeds' );
 
     $fields_main = [
-        'feed_slug'        => [ 'Feed Slug',        'Generates: /?feed={slug}-raw-feed — flush permalinks after changing.' ],
+        'feed_slug'        => [ 'Feed Slug',        'Generates: /?feed={slug}-raw-feed.' ],
         'feed_title'       => [ 'Feed Title',        'Channel <title>.' ],
         'feed_description' => [ 'Feed Description',  'Channel <description>.' ],
         'feed_link'        => [ 'Site Link',         'Canonical homepage URL.' ],
@@ -97,17 +97,50 @@ function mmgrf_register_settings() {
         'affiliate_path_action'   => [ 'Path Match Action', 'unwrap (default), skip_item, or strip_paragraph.' ],
         'slideshow_tag'           => [ 'Slideshow Marker Tag', 'Posts with this tag ship via the {slug}-slideshows feeds and are withheld from article feeds. Change it here if this site already uses the tag editorially.' ],
         'video_tag'               => [ 'Video Marker Tag', 'Posts with this tag ship via the {slug}-videos feeds and are withheld from article feeds.' ],
+        'settle_seconds'          => [ 'Publish Settle Window (seconds)', 'A newly published post is held back from the network feeds for this long, so a partner can never pick it up before its categories, featured image and Syndication box have finished saving (syndication cannot be undone). Default 60; 0 disables. The legacy Aigeon feed is not delayed.' ],
     ];
     foreach ( $fields_filter as $key => [ $label, $desc ] ) {
         add_settings_field( 'mmgrf_' . $key, $label, 'mmgrf_field_cb', 'scoreline-feeds', 'mmgrf_filter', [ 'key' => $key, 'desc' => $desc ] );
     }
 }
 
+/**
+ * Is $slug safe to register as a feed route? Core feed names are off limits
+ * (add_feed() REPLACES the core handler — the site's main feed would become
+ * a network feed), and so is any slug another feed of this plugin already
+ * uses (two handlers on one route emit two XML documents back to back).
+ */
+function mmgrf_feed_slug_conflict( $slug, $taken ) {
+    if ( in_array( $slug, MMGRF_RESERVED_SLUGS, true ) ) {
+        return 'is a built-in WordPress feed name';
+    }
+    if ( in_array( $slug, $taken, true ) ) {
+        return 'is already used by another Scoreline feed';
+    }
+    return '';
+}
+
+function mmgrf_settings_error( $message ) {
+    if ( function_exists( 'add_settings_error' ) ) {
+        add_settings_error( 'mmgrf_options_group', 'mmgrf_slug_' . md5( $message ), $message, 'error' );
+    }
+}
+
 function mmgrf_sanitize_options( $input ) {
-    $clean = [];
-    $clean['feed_slug']             = sanitize_title( $input['feed_slug'] ?? 'raw-feed' ) ?: 'raw-feed';
-    $clean['feed_title']            = sanitize_text_field( $input['feed_title'] ?? get_bloginfo( 'name' ) );
-    $clean['feed_description']      = sanitize_text_field( $input['feed_description'] ?? get_bloginfo( 'description' ) );
+    $input    = is_array( $input ) ? $input : [];
+    $defaults = mmgrf_get_options();
+    $clean    = [];
+
+    $slug = sanitize_title( $input['feed_slug'] ?? 'raw-feed' ) ?: 'raw-feed';
+    // The main feed is served at {slug}-raw-feed; tag feeds share that suffix.
+    $tag_slugs = array_filter( array_column( mmgrf_get_tag_feeds(), 'slug' ) );
+    if ( in_array( $slug, $tag_slugs, true ) ) {
+        mmgrf_settings_error( 'Feed Slug "' . $slug . '" is already used by a tag feed — the previous slug was kept.' );
+        $slug = $defaults['feed_slug'];
+    }
+    $clean['feed_slug']             = $slug;
+    $clean['feed_title']            = sanitize_text_field( $input['feed_title'] ?? $defaults['feed_title'] );
+    $clean['feed_description']      = sanitize_text_field( $input['feed_description'] ?? $defaults['feed_description'] );
     $clean['feed_link']             = esc_url_raw( $input['feed_link'] ?? home_url() );
     $clean['utm_source']            = sanitize_key( $input['utm_source'] ?? 'feed' );
     $clean['utm_medium']            = sanitize_key( $input['utm_medium'] ?? 'email' );
@@ -119,26 +152,51 @@ function mmgrf_sanitize_options( $input ) {
     $clean['exclude_tags']          = sanitize_text_field( $input['exclude_tags'] ?? '' );
     $clean['exclude_networks_cats'] = sanitize_text_field( $input['exclude_networks_cats'] ?? '' );
     $clean['exclude_networks_tags'] = sanitize_text_field( $input['exclude_networks_tags'] ?? '' );
-    $defaults = mmgrf_get_options();
     $clean['affiliate_domains']       = sanitize_text_field( $input['affiliate_domains'] ?? $defaults['affiliate_domains'] );
     $clean['affiliate_paths']         = sanitize_text_field( $input['affiliate_paths'] ?? $defaults['affiliate_paths'] );
     $clean['affiliate_domain_action'] = in_array( $input['affiliate_domain_action'] ?? '', [ 'skip_item', 'unwrap', 'strip_paragraph' ], true ) ? $input['affiliate_domain_action'] : 'skip_item';
     $clean['affiliate_path_action']   = in_array( $input['affiliate_path_action'] ?? '', [ 'skip_item', 'unwrap', 'strip_paragraph' ], true ) ? $input['affiliate_path_action'] : 'unwrap';
     $clean['slideshow_tag']           = sanitize_title( $input['slideshow_tag'] ?? 'slideshow' ) ?: 'slideshow';
     $clean['video_tag']               = sanitize_title( $input['video_tag'] ?? 'video' ) ?: 'video';
+    if ( $clean['video_tag'] === $clean['slideshow_tag'] ) {
+        mmgrf_settings_error( 'The slideshow and video marker tags must be different — the video tag was reset to "video".' );
+        $clean['video_tag'] = $clean['slideshow_tag'] === 'video' ? 'video-clip' : 'video';
+    }
+    $clean['settle_seconds']        = max( 0, min( 900, absint( $input['settle_seconds'] ?? $defaults['settle_seconds'] ) ) );
     $clean['enhance_default_feeds'] = empty( $input['enhance_default_feeds'] ) ? 0 : 1;
-    set_transient( 'mmgrf_flush_rewrites', 1, 30 );
     mmgrf_touch_config();
     return $clean;
 }
 
 function mmgrf_sanitize_networks( $input ) {
-    $clean = [];
+    $input   = is_array( $input ) ? $input : [];
+    $current = mmgrf_get_network_config();
+    $clean   = [];
+    // Slugs already spoken for: the legacy feeds, then each network (and its
+    // typed feeds) as it is accepted below.
+    $taken   = [ mmgrf_get_options()['feed_slug'] . '-raw-feed' ];
+    foreach ( mmgrf_get_tag_feeds() as $tf ) {
+        if ( ! empty( $tf['slug'] ) ) {
+            $taken[] = $tf['slug'] . '-raw-feed';
+        }
+    }
     foreach ( MMGRF_NETWORKS as $key ) {
-        $in = is_array( $input[ $key ] ?? null ) ? $input[ $key ] : [];
+        $in    = is_array( $input[ $key ] ?? null ) ? $input[ $key ] : [];
+        $slug  = sanitize_title( $in['slug'] ?? '' ) ?: $key;
+        $typed = in_array( $key, MMGRF_TYPED_NETWORKS, true ) ? [ $slug . '-slideshows', $slug . '-videos' ] : [];
+        foreach ( array_merge( [ $slug ], $typed ) as $candidate ) {
+            $why = mmgrf_feed_slug_conflict( $candidate, $taken );
+            if ( $why !== '' ) {
+                mmgrf_settings_error( ucfirst( $key ) . ' feed slug "' . $slug . '" was not saved: "' . $candidate . '" ' . $why . '. The previous slug was kept.' );
+                $slug  = $current[ $key ]['slug'];
+                $typed = in_array( $key, MMGRF_TYPED_NETWORKS, true ) ? [ $slug . '-slideshows', $slug . '-videos' ] : [];
+                break;
+            }
+        }
+        $taken = array_merge( $taken, [ $slug ], $typed );
         $clean[ $key ] = [
             'enabled'     => ! empty( $in['enabled'] ),
-            'slug'        => sanitize_title( $in['slug'] ?? '' ) ?: $key,
+            'slug'        => $slug,
             'post_count'  => absint( $in['post_count'] ?? 0 ),
             'image_size'  => sanitize_key( $in['image_size'] ?? '' ),
             'utm_enabled' => ! empty( $in['utm_enabled'] ),
@@ -147,7 +205,6 @@ function mmgrf_sanitize_networks( $input ) {
             'nb_scripts'  => $key === 'newsbreak' ? trim( (string) ( $in['nb_scripts'] ?? '' ) ) : '',
         ];
     }
-    set_transient( 'mmgrf_flush_rewrites', 1, 30 );
     mmgrf_touch_config();
     return $clean;
 }
@@ -173,18 +230,17 @@ function mmgrf_handle_save_tag_feed() {
     $feeds      = mmgrf_get_tag_feeds();
     $edit_index = ( isset( $_POST['edit_index'] ) && $_POST['edit_index'] !== '' ) ? (int) $_POST['edit_index'] : null;
 
-    $entry = [
-        'slug'       => sanitize_title( $_POST['tf_slug'] ?? '' ),
-        'title'      => sanitize_text_field( $_POST['tf_title'] ?? '' ),
-        'tags'       => sanitize_text_field( $_POST['tf_tags'] ?? '' ),
-        'post_count' => absint( $_POST['tf_post_count'] ?? 10 ),
-        'utm_source' => sanitize_key( $_POST['tf_utm_source'] ?? 'feed' ),
-        'utm_medium' => sanitize_key( $_POST['tf_utm_medium'] ?? 'email' ),
-        'image_size' => sanitize_key( $_POST['tf_image_size'] ?? 'large' ),
-    ];
+    // WordPress adds slashes to $_POST; without this "Dale's NASCAR Feed"
+    // is stored (and emitted in the channel title) as "Dale\'s NASCAR Feed".
+    $post  = wp_unslash( $_POST );
+    $entry = mmgrf_clean_tag_feed( $post );
 
     if ( empty( $entry['slug'] ) || empty( $entry['tags'] ) ) {
-        wp_redirect( admin_url( 'options-general.php?page=scoreline-feeds&mmgrf_error=missing_fields#tag-feeds' ) );
+        wp_safe_redirect( admin_url( 'options-general.php?page=scoreline-feeds&mmgrf_error=missing_fields#tag-feeds' ) );
+        exit;
+    }
+    if ( mmgrf_tag_feed_slug_taken( $entry['slug'], $feeds, $edit_index ) ) {
+        wp_safe_redirect( admin_url( 'options-general.php?page=scoreline-feeds&mmgrf_error=slug_taken#tag-feeds' ) );
         exit;
     }
 
@@ -195,9 +251,46 @@ function mmgrf_handle_save_tag_feed() {
     }
 
     update_option( 'mmgrf_tag_feeds', $feeds );
-    set_transient( 'mmgrf_flush_rewrites', 1, 30 );
-    wp_redirect( admin_url( 'options-general.php?page=scoreline-feeds&mmgrf_saved=1#tag-feeds' ) );
+    mmgrf_touch_config();
+    wp_safe_redirect( admin_url( 'options-general.php?page=scoreline-feeds&mmgrf_saved=1#tag-feeds' ) );
     exit;
+}
+
+/** Sanitize one tag-feed form submission (already unslashed). */
+function mmgrf_clean_tag_feed( $post ) {
+    return [
+        'slug'       => sanitize_title( $post['tf_slug'] ?? '' ),
+        'title'      => sanitize_text_field( $post['tf_title'] ?? '' ),
+        'tags'       => sanitize_text_field( $post['tf_tags'] ?? '' ),
+        'post_count' => absint( $post['tf_post_count'] ?? 10 ),
+        'utm_source' => sanitize_key( $post['tf_utm_source'] ?? 'feed' ),
+        'utm_medium' => sanitize_key( $post['tf_utm_medium'] ?? 'email' ),
+        'image_size' => sanitize_key( $post['tf_image_size'] ?? 'large' ),
+    ];
+}
+
+/** Would a tag feed with this slug collide with the main feed or another tag feed? */
+function mmgrf_tag_feed_slug_taken( $slug, $feeds, $edit_index = null ) {
+    if ( $slug === mmgrf_get_options()['feed_slug'] ) {
+        return true;
+    }
+    foreach ( $feeds as $i => $tf ) {
+        if ( $i !== $edit_index && ( $tf['slug'] ?? '' ) === $slug ) {
+            return true;
+        }
+    }
+    // {slug}-raw-feed must not equal a network route either.
+    foreach ( mmgrf_get_network_config() as $network => $net ) {
+        $routes = [ $net['slug'] ];
+        if ( in_array( $network, MMGRF_TYPED_NETWORKS, true ) ) {
+            $routes[] = $net['slug'] . '-slideshows';
+            $routes[] = $net['slug'] . '-videos';
+        }
+        if ( in_array( $slug . '-raw-feed', $routes, true ) ) {
+            return true;
+        }
+    }
+    return false;
 }
 
 add_action( 'admin_post_mmgrf_delete_tag_feed', 'mmgrf_handle_delete_tag_feed' );
@@ -210,9 +303,9 @@ function mmgrf_handle_delete_tag_feed() {
     if ( isset( $feeds[ $index ] ) ) {
         array_splice( $feeds, $index, 1 );
         update_option( 'mmgrf_tag_feeds', $feeds );
-        set_transient( 'mmgrf_flush_rewrites', 1, 30 );
+        mmgrf_touch_config();
     }
-    wp_redirect( admin_url( 'options-general.php?page=scoreline-feeds&mmgrf_deleted=1#tag-feeds' ) );
+    wp_safe_redirect( admin_url( 'options-general.php?page=scoreline-feeds&mmgrf_deleted=1#tag-feeds' ) );
     exit;
 }
 
@@ -245,8 +338,11 @@ function mmgrf_settings_page() {
             <div class="notice notice-success is-dismissible"><p>🗑 Tag feed deleted.</p></div>
         <?php endif; ?>
         <?php if ( isset( $_GET['mmgrf_error'] ) ) : ?>
-            <div class="notice notice-error is-dismissible"><p>⚠️ Slug and Tags are required.</p></div>
+            <div class="notice notice-error is-dismissible"><p>⚠️ <?php echo $_GET['mmgrf_error'] === 'slug_taken' ? 'That feed slug is already in use by another Scoreline feed — choose a different one.' : 'Slug and Tags are required.'; ?></p></div>
         <?php endif; ?>
+        <?php foreach ( mmgrf_health_problems() as $problem ) : ?>
+            <div class="notice notice-<?php echo $problem['level'] === 'error' ? 'error' : 'warning'; ?>"><p><strong>Scoreline Feeds:</strong> <?php echo esc_html( $problem['message'] ); ?></p></div>
+        <?php endforeach; ?>
 
         <h2>Main Feed (Aigeon legacy)</h2>
         <p>Live URL: <strong><a href="<?php echo esc_url( $main_url ); ?>" target="_blank"><?php echo esc_html( $main_url ); ?></a></strong></p>
@@ -264,8 +360,7 @@ function mmgrf_settings_page() {
                 $net = $networks[ $key ];
                 // Same helper as the feed's atom:link — the URL shown here is
                 // always the one the partner should be given (Fix 8).
-                $qs_url     = mmgrf_network_feed_url( $net['slug'] );
-                $pretty_url = home_url( '/feed/' . rawurlencode( $net['slug'] ) . '/' );
+                $feed_url   = mmgrf_network_feed_url( $net['slug'] );
             ?>
             <div style="background:#fff;border:1px solid #ccd0d4;border-radius:4px;padding:16px 20px;margin-bottom:14px;max-width:900px;">
                 <h3 style="margin-top:0;"><?php echo esc_html( $label ); ?></h3>
@@ -279,9 +374,9 @@ function mmgrf_settings_page() {
                         <th>Feed Slug</th>
                         <td>
                             <input type="text" name="mmgrf_networks[<?php echo esc_attr( $key ); ?>][slug]" value="<?php echo esc_attr( $net['slug'] ); ?>" class="regular-text">
-                            <p class="description">URLs: <code><?php echo esc_html( $qs_url ); ?></code> and <code><?php echo esc_html( $pretty_url ); ?></code><?php echo $key === 'msn' ? ' — give MSN the pretty form.' : ''; ?></p>
-                            <?php if ( $key === 'yahoo' || $key === 'msn' ) : ?>
-                            <p class="description">Typed feeds: slideshows <code><?php echo esc_html( home_url( '/feed/' . rawurlencode( $net['slug'] ) . '-slideshows/' ) ); ?></code> · videos <code><?php echo esc_html( home_url( '/feed/' . rawurlencode( $net['slug'] ) . '-videos/' ) ); ?></code> (register each as its content type with the partner).</p>
+                            <p class="description">Feed URL to give the partner: <code><?php echo esc_html( $feed_url ); ?></code></p>
+                            <?php if ( in_array( $key, MMGRF_TYPED_NETWORKS, true ) ) : ?>
+                            <p class="description">Typed feeds: slideshows <code><?php echo esc_html( mmgrf_network_feed_url( $net['slug'] . '-slideshows' ) ); ?></code> · videos <code><?php echo esc_html( mmgrf_network_feed_url( $net['slug'] . '-videos' ) ); ?></code> (register each as its content type with the partner).</p>
                             <?php endif; ?>
                         </td>
                     </tr>
@@ -299,7 +394,7 @@ function mmgrf_settings_page() {
                     <tr>
                         <th>nb:scripts</th>
                         <td>
-                            <textarea name="mmgrf_networks[newsbreak][nb_scripts]" rows="3" class="large-text code" placeholder="Empty = not emitted"><?php echo esc_html( $net['nb_scripts'] ); ?></textarea>
+                            <textarea name="mmgrf_networks[newsbreak][nb_scripts]" rows="3" class="large-text code" placeholder="Empty = not emitted"><?php echo esc_textarea( $net['nb_scripts'] ); ?></textarea>
                             <p class="description">⚠️ Third-party tracking markup NewsBreak executes sandboxed on their property under MMG's name. Leave empty unless explicitly signed off.</p>
                         </td>
                     </tr>
@@ -411,7 +506,7 @@ function mmgrf_settings_page() {
         </div>
 
         <hr>
-        <p style="color:#888;font-size:12px;">After adding or editing feeds, go to <strong>Settings → Permalinks</strong> and click Save once to register the new feed slugs.</p>
+        <p style="color:#888;font-size:12px;">New and renamed feed URLs register themselves automatically on the next page load — no Permalinks re-save needed.</p>
     </div>
     <?php
 }
@@ -447,12 +542,35 @@ function mmgrf_syndication_meta_box( $post ) {
     echo '<label style="display:block;margin-top:6px;border-top:1px solid #eee;padding-top:6px;"><input type="checkbox" name="mmgrf_sponsored" value="1"' . ( $sponsored ? ' checked' : '' ) . '> <strong>Sponsored content</strong> (exclude from all networks)</label>';
 }
 
-add_action( 'save_post', function( $post_id ) {
-    if ( ! isset( $_POST['mmgrf_syndication_nonce'] ) || ! wp_verify_nonce( $_POST['mmgrf_syndication_nonce'], 'mmgrf_save_syndication' ) ) return;
+add_action( 'save_post', 'mmgrf_on_save_post' );
+function mmgrf_on_save_post( $post_id ) {
+    if ( ! isset( $_POST['mmgrf_syndication_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mmgrf_syndication_nonce'] ) ), 'mmgrf_save_syndication' ) ) return;
     if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) return;
+    if ( ! mmgrf_is_edited_post( $post_id, $_POST ) ) return;
     if ( ! current_user_can( 'edit_post', $post_id ) ) return;
-    mmgrf_save_syndication_meta( $post_id, $_POST );
-} );
+    mmgrf_save_syndication_meta( $post_id, wp_unslash( $_POST ) );
+}
+
+/**
+ * Is $post_id the post this form submission is editing?
+ *
+ * save_post also fires for the autosave REVISION that "Preview Changes"
+ * creates (meta writes on a revision land on the live parent — so unticking
+ * "Sponsored content" and clicking Preview used to clear the exclusion on
+ * the published post), and for any other post a plugin inserts or updates
+ * during the same request (translation sync, duplicators), which would
+ * inherit this post's flags.
+ */
+function mmgrf_is_edited_post( $post_id, $form ) {
+    if ( wp_is_post_revision( $post_id ) || wp_is_post_autosave( $post_id ) ) {
+        return false;
+    }
+    if ( (int) ( $form['post_ID'] ?? 0 ) !== (int) $post_id ) {
+        return false;
+    }
+    $post = get_post( $post_id );
+    return $post && in_array( $post->post_type, mmgrf_syndication_post_types(), true );
+}
 
 /** Persist the Syndication box fields. $data is the raw form payload. */
 function mmgrf_save_syndication_meta( $post_id, $data ) {
@@ -492,5 +610,6 @@ add_filter( 'attachment_fields_to_save', function( $post, $attachment ) {
     } else {
         delete_post_meta( $post['ID'], '_mmgrf_no_syndication_rights' );
     }
+    mmgrf_touch_config(); // a takedown must not wait behind a 304
     return $post;
 }, 10, 2 );

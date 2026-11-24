@@ -180,14 +180,14 @@ t( 'r5: msn demotes h6 to h5 rather than losing the heading', function() {
 
 t( 'r5: a large stats table sanitizes and prunes in linear time', function() {
     $rows = '';
-    for ( $i = 0; $i < 4000; $i++ ) {
+    for ( $i = 0; $i < 8000; $i++ ) {
         $rows .= "<tr><td>Player $i</td><td>$i</td><td><br></td></tr>";
     }
     $t   = microtime( true );
     $out = r5_clean( "<table>$rows</table>", 'msn' )['html'];
     mmgrf_guard_affiliate_links( $out . '<a href="https://x.test">x</a>', [ 'fanduel.com' ], [ 'promo' ] );
     expect_true( microtime( true ) - $t < 5, 'was 37 seconds for 8,000 rows before; now well under a second' );
-    expect_contains( $out, 'Player 3999' );
+    expect_contains( $out, 'Player 7999' );
 } );
 
 // ── Emitter: a single bad character must not sink the whole feed ──

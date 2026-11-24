@@ -374,7 +374,7 @@ t( 'fix11: gating — disabled networks render nothing; enabled yahoo gates', fu
 
 t( 'fix11: clean post with a compliant featured image reports no issues', function() {
     fix11_enable_yahoo();
-    $id = mmgrf_test_add_post( [ 'post_content' => '<p>fine body</p>' ] );
+    $id = mmgrf_test_add_post( [ 'post_content' => '<p>' . implode( ' ', array_fill( 0, 160, 'fine' ) ) . '</p>' ] );
     mmgrf_test_add_attachment( 9910, [ 'full' => [ 'https://example-brand.com/big-scaled.jpg', 2560, 1707 ] ] );
     $GLOBALS['mmgrf_test']['posts'][ $id ]->thumbnail_id = 9910;
     $r = mmgrf_syndication_check( $id );
@@ -451,7 +451,7 @@ t( 'fix11: affiliate checks state their differing consequences', function() {
 
 t( 'fix11: ordinary external link raises nothing', function() {
     fix11_enable_yahoo();
-    $id = mmgrf_test_add_post( [ 'post_content' => '<p><a href="https://www.espn.com/mlb/boxscore/_/gameId/4">box</a></p>' ] );
+    $id = mmgrf_test_add_post( [ 'post_content' => '<p><a href="https://www.espn.com/mlb/boxscore/_/gameId/4">box</a> ' . implode( ' ', array_fill( 0, 160, 'score' ) ) . '</p>' ] );
     mmgrf_test_add_attachment( 9916, [ 'full' => [ 'https://example-brand.com/l.jpg', 1920, 1080 ] ] );
     $GLOBALS['mmgrf_test']['posts'][ $id ]->thumbnail_id = 9916;
     expect_eq( mmgrf_syndication_check( $id )['issues'], [] );

@@ -83,10 +83,11 @@ t( 'r5 typed feeds: a site with no marker tag gets an empty feed, not term id 1'
     expect_eq( $GLOBALS['mmgrf_test']['last_query_args'], null, 'no query is even run' );
 } );
 
-t( 'r5 typed feeds: a post tagged both slideshow and video ships only as a slideshow', function() {
-    $id = slideshow_post( 5 );
-    mmgrf_test_set_terms( $id, 'post_tag', [ 'Video' ] );
-    expect_eq( substr_count( r5_slideshow_xml(), '<item>' ), 1 );
+t( 'r5 typed feeds: a post tagged both slideshow and video never ships as a video', function() {
+    // A fully valid video post that ALSO carries the slideshow tag: one guid
+    // must not appear as two content types, and slideshow takes precedence.
+    $id = video_post();
+    mmgrf_test_set_terms( $id, 'post_tag', [ 'Slideshow' ] );
     expect_eq( substr_count( r5_video_xml(), '<item>' ), 0 );
 } );
 

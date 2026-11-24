@@ -1020,6 +1020,16 @@ function mmgrf_on_media_change() {
 
 /** Shared conditional-GET + cache headers. Returns true when 304 was served. */
 function mmgrf_feed_headers_and_maybe_304() {
+    // Without the DOM or mbstring extension a render would die mid-document.
+    // Say "temporarily unavailable" instead — a partner retries a 503; a
+    // half-written or empty 200 reads as "this feed has no articles".
+    if ( mmgrf_missing_requirements() ) {
+        status_header( 503 );
+        header( 'Retry-After: 3600' );
+        header( 'Content-Type: text/plain; charset=UTF-8' );
+        echo 'Feed temporarily unavailable.';
+        return true;
+    }
     $lastmod = mmgrf_feed_lastmod();
     header( 'Content-Type: application/rss+xml; charset=UTF-8' );
     header( 'Cache-Control: no-store, no-cache, must-revalidate, max-age=0' );

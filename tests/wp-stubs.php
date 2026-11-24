@@ -34,7 +34,7 @@ function mmgrf_test_reset() {
         'sticky' => [], 'term_children' => [], 'logged_in' => false, 'last_query_args' => null,
         'query_vars' => [], 'option_writes' => [], 'authors' => [],
         'upload_baseurl' => null, 'remote' => [], 'current_user_id' => 1, 'caps' => null,
-        'status_header' => null, 'headers' => [], 'flush_count' => 0,
+        'status_header' => null, 'headers' => [], 'flush_count' => 0, 'settings_errors' => [],
     ] );
     // Request-scoped plugin state must not leak between tests.
     unset( $GLOBALS['wp'], $GLOBALS['post'] );
@@ -111,7 +111,7 @@ function update_option( $k, $v, $autoload = null ) {
 }
 function delete_option( $k ) { unset( $GLOBALS['mmgrf_test']['options'][ $k ] ); return true; }
 function get_transient( $k ) { return $GLOBALS['mmgrf_test']['transients'][ $k ] ?? false; }
-function set_transient( $k, $v, $ttl = 0 ) { $GLOBALS['mmgrf_test']['transients'][ $k ] = $v; return true; }
+function set_transient( $k, $v, $ttl = 0 ) { $GLOBALS['mmgrf_test']['transients'][ $k ] = $v; $GLOBALS['mmgrf_test']['transient_ttl'][ $k ] = $ttl; return true; }
 function delete_transient( $k ) { unset( $GLOBALS['mmgrf_test']['transients'][ $k ] ); return true; }
 
 // ── URLs / blog info ─────────────────────────────────────────────
@@ -299,6 +299,14 @@ function setup_postdata( $post ) { $GLOBALS['mmgrf_test']['current_post'] = is_o
 function wp_reset_postdata() { $GLOBALS['mmgrf_test']['current_post'] = null; $GLOBALS['post'] = null; }
 function get_the_ID() { return $GLOBALS['mmgrf_test']['current_post']; }
 function is_admin() { return false; }
+function wp_unslash( $v ) { return is_array( $v ) ? array_map( 'wp_unslash', $v ) : ( is_string( $v ) ? stripslashes( $v ) : $v ); }
+function wp_is_post_revision( $post_id ) { $p = get_post( is_object( $post_id ) ? $post_id->ID : $post_id ); return ( $p && $p->post_type === 'revision' ) ? (int) ( $p->post_parent ?? 0 ) : false; }
+function wp_is_post_autosave( $post_id ) { $p = get_post( is_object( $post_id ) ? $post_id->ID : $post_id ); return ( $p && $p->post_type === 'revision' && strpos( (string) $p->post_name, 'autosave' ) !== false ) ? (int) ( $p->post_parent ?? 0 ) : false; }
+function wp_verify_nonce( $nonce, $action = -1 ) { return $nonce === 'valid-nonce-' . $action ? 1 : false; }
+function add_settings_error( $setting, $code, $message, $type = 'error' ) { $GLOBALS['mmgrf_test']['settings_errors'][] = $message; }
+function esc_textarea( $s ) { return htmlspecialchars( (string) $s, ENT_QUOTES, 'UTF-8' ); }
+function admin_url( $path = '' ) { return home_url( '/wp-admin/' . ltrim( $path, '/' ) ); }
+function get_post_status( $post ) { $p = is_object( $post ) ? $post : get_post( $post ); return $p ? $p->post_status : false; }
 function wp_date( $format, $ts ) { return gmdate( $format, $ts ); }
 function current_user_can( $cap, ...$args ) {
     $caps = $GLOBALS['mmgrf_test']['caps'] ?? null;

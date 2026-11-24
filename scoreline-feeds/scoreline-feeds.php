@@ -28,6 +28,7 @@ require_once MMGRF_DIR . '/profiles/class-profile-msn.php';
 require_once MMGRF_DIR . '/profiles/class-profile-yahoo.php';
 require_once MMGRF_DIR . '/includes/options.php';
 require_once MMGRF_DIR . '/includes/pipeline.php';
+require_once MMGRF_DIR . '/includes/health.php';
 require_once MMGRF_DIR . '/includes/admin.php';
 require_once MMGRF_DIR . '/includes/syndication-check.php';
 require_once MMGRF_DIR . '/includes/updater.php';
@@ -140,22 +141,6 @@ function mmgrf_output_network_feed_with_opts( $network, $opts, $filters = [] ) {
     echo mmgrf_render_feed( mmgrf_get_profile( $network ), $opts, $filters );
 }
 
-/**
- * A network feed must never be served from a request that is not asking for
- * it: custom feed slugs also answer at the site root (/yahoo/), so guard the
- * requirements once, loudly, instead of failing inside a render.
- */
-function mmgrf_missing_requirements() {
-    $missing = [];
-    if ( ! class_exists( 'DOMDocument' ) ) {
-        $missing[] = 'the PHP "dom" extension';
-    }
-    if ( ! function_exists( 'mb_substr' ) || ! function_exists( 'mb_strrpos' ) ) {
-        $missing[] = 'the PHP "mbstring" extension';
-    }
-    return $missing;
-}
-
 // ─────────────────────────────────────────────────────────────────
 // DEFAULT-FEED ENHANCEMENT (ported from NewsBreak RSS Feed v1.3.0)
 // The standalone plugin silently enhanced /feed/ output; consumers may
@@ -209,17 +194,17 @@ function mmgrf_default_feed_media_tags() {
     if ( ! $post || ! has_post_thumbnail( $post->ID ) ) {
         return;
     }
-    $thumb_id = get_post_thumbnail_id( $post->ID );
-    $image    = wp_get_attachment_image_src( $thumb_id, 'large' );
-    if ( ! $image ) {
+    // Same resolver as the network feeds: true rendition dimensions (never
+    // the theme's $content_width-constrained ones) and the rendition's own
+    // byte size, with a missing file never advertised.
+    $img = mmgrf_attachment_image_data( get_post_thumbnail_id( $post->ID ), 'large' );
+    if ( ! $img || ! empty( $img['file_missing'] ) ) {
         return;
     }
-    $mime = get_post_mime_type( $thumb_id ) ?: 'image/jpeg';
-    $file = get_attached_file( $thumb_id );
-    $size = ( $file && file_exists( $file ) ) ? filesize( $file ) : 100000;
-    echo '<media:thumbnail url="' . mmgrf_xml( $image[0] ) . '" width="' . (int) $image[1] . '" height="' . (int) $image[2] . '" />' . "\n";
-    echo '<media:content medium="image" url="' . mmgrf_xml( $image[0] ) . '" width="' . (int) $image[1] . '" height="' . (int) $image[2] . '" type="' . mmgrf_xml( $mime ) . '" />' . "\n";
-    echo '<enclosure url="' . mmgrf_xml( $image[0] ) . '" length="' . (int) $size . '" type="' . mmgrf_xml( $mime ) . '" />' . "\n";
+    $dims = ( $img['width'] > 0 && $img['height'] > 0 ) ? ' width="' . (int) $img['width'] . '" height="' . (int) $img['height'] . '"' : '';
+    echo '<media:thumbnail url="' . mmgrf_xml( $img['url'] ) . '"' . $dims . ' />' . "\n";
+    echo '<media:content medium="image" url="' . mmgrf_xml( $img['url'] ) . '"' . $dims . ' type="' . mmgrf_xml( $img['type'] ) . '" />' . "\n";
+    echo '<enclosure url="' . mmgrf_xml( $img['url'] ) . '" length="' . (int) ( $img['filesize'] ?: 100000 ) . '" type="' . mmgrf_xml( $img['type'] ) . '" />' . "\n";
 }
 
 function mmgrf_default_feed_prepend_image( $content ) {
@@ -231,13 +216,15 @@ function mmgrf_default_feed_prepend_image( $content ) {
         return $content;
     }
     $thumb_id = get_post_thumbnail_id( $post->ID );
-    $url      = wp_get_attachment_image_url( $thumb_id, 'large' );
-    if ( ! $url ) {
+    $img      = mmgrf_attachment_image_data( $thumb_id, 'large' );
+    if ( ! $img || ! empty( $img['file_missing'] ) ) {
         return $content;
     }
-    $alt    = get_post_meta( $thumb_id, '_wp_attachment_image_alt', true ) ?: get_the_title( $post->ID );
-    $credit = mmgrf_resolve_credit( $post->ID, $thumb_id );
-    $figure = '<figure><img src="' . mmgrf_xml( $url ) . '" alt="' . mmgrf_xml( $alt ) . '" />';
+    // Plain-text fields come back from WordPress entity-encoded (a
+    // texturized title is "Yamaha&#8217;s…"): decode once, escape once.
+    $alt    = $img['alt'] !== '' ? $img['alt'] : mmgrf_text_field( get_the_title( $post->ID ) );
+    $credit = mmgrf_text_field( mmgrf_resolve_credit( $post->ID, $thumb_id ) );
+    $figure = '<figure><img src="' . mmgrf_xml( $img['url'] ) . '" alt="' . mmgrf_xml( $alt ) . '" />';
     if ( $credit !== '' ) {
         $figure .= '<figcaption>' . mmgrf_xml( $credit ) . '</figcaption>';
     }
