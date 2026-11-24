@@ -3,6 +3,17 @@
 Release notes for Scoreline Feeds. Versions before 3.6.0 are described in the
 GitHub release for each tag.
 
+## 3.6.1 — 2026-11-24
+
+- **NewsBreak now receives posts tagged `slideshow` or `video` as ordinary
+  articles.** A format is withheld from a network only where that network
+  does not accept it: NewsBreak has no gallery type (a slideshow post is an
+  image-led article to them) and its feed specification takes video inside
+  the article body. Yahoo and MSN are unchanged — there these posts ship
+  only through the slideshow and video feeds. On the first poll after
+  updating, any such posts among a site's latest 50 will be delivered to
+  NewsBreak.
+
 ## 3.6.0 — 2026-11-24
 
 Enterprise hardening release: the result of a section-by-section audit of
@@ -132,8 +143,6 @@ against 3.5.3.
 
 ### Deliberately unchanged
 
-- NewsBreak still withholds posts carrying the slideshow or video marker tag
-  (it has no typed feed; shipping them as articles is a separate decision).
 - GUIDs remain the permalink. (Editing a slug after publish still makes
   partners see a new article; freezing the GUID is a separate decision.)
 - The syndication-rights flag still applies to MSN only.

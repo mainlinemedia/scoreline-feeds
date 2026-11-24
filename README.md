@@ -54,7 +54,9 @@ register themselves; there is no need to re-save Permalinks.
   1080×1080 square) and a featured image for the thumbnail.
 
 A post with either tag ships **only** through its typed feed on Yahoo and
-MSN. The marker tags can be changed in settings.
+MSN. On NewsBreak — which has no gallery type and accepts video inside the
+article body — the same post ships as an ordinary article. The marker tags
+can be changed in settings.
 
 ## Development
 

@@ -39,15 +39,26 @@ t( 'r5-review: a lead photo moved to the top keeps its in-body caption and alt',
     }
 } );
 
-// ── 3. NewsBreak keeps withholding slideshow/video posts (as 3.5.3 did) ──
+// ── 3. A format is withheld only where the network does not accept it ──
 
-t( 'r5-review: updating does not start shipping slideshow- or video-tagged posts to NewsBreak', function() {
-    $s = fixture_post();
+t( '3.6.1: slideshow- and video-tagged posts ship to NewsBreak as articles; Yahoo and MSN take them only as typed feeds', function() {
+    $s = fixture_post( [ 'post_date_gmt' => gmdate( 'Y-m-d H:i:s', time() - 2 * 86400 ) ] );
     mmgrf_test_set_terms( $s, 'post_tag', [ 'slideshow' ] );
     $v = fixture_post();
     mmgrf_test_set_terms( $v, 'post_tag', [ 'video' ] );
-    expect_eq( r5_ids( 'newsbreak' ), [] );
-    expect_eq( count( r5_ids( 'aigeon' ) ), 2, 'the legacy feed never excluded them' );
+    expect_eq( r5_ids( 'newsbreak' ), [ $v, $s ], 'NewsBreak has no gallery type and accepts video in the article body' );
+    expect_eq( r5_ids( 'yahoo' ), [], 'typed feed only' );
+    expect_eq( r5_ids( 'msn' ), [], 'typed feed only' );
+    expect_eq( count( r5_ids( 'aigeon' ) ), 2 );
+} );
+
+t( '3.6.1: a video post reaches NewsBreak with a working, absolute player in its body', function() {
+    $id = video_post( [ 'post_content' => '<p>' . r5_words( 40 ) . '</p><figure class="wp-block-video"><video controls src="/up/clip.mp4"></video></figure>' ] );
+    update_option( 'mmgrf_networks', [ 'newsbreak' => [ 'enabled' => 1 ] ] );
+    $xml = mmgrf_render_feed( mmgrf_get_profile( 'newsbreak' ), mmgrf_network_options( 'newsbreak' ), [] );
+    expect_well_formed( $xml );
+    expect_eq( substr_count( $xml, '<item>' ), 1 );
+    expect_contains( $xml, '<video controls src="https://example-brand.com/up/clip.mp4"></video>' );
 } );
 
 // ── 4. Another site's upload is never mistaken for one of ours ────

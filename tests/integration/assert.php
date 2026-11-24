@@ -132,7 +132,7 @@ foreach ( $xml as $name => $body ) {
 check( strpos( $xml['aigeon'], 'FRESHBODY' ) !== false, 'aigeon: the legacy feed is not delayed' );
 check( count( items( $xml['yahoo'] ) ) === 3, 'yahoo: exactly the three eligible articles', count( items( $xml['yahoo'] ) ) . ' items' );
 check( count( items( $xml['msn'] ) ) === 3, 'msn: exactly the three eligible articles', count( items( $xml['msn'] ) ) . ' items' );
-check( count( items( $xml['newsbreak'] ) ) === 3, 'newsbreak: exactly the three eligible articles', count( items( $xml['newsbreak'] ) ) . ' items' );
+check( count( items( $xml['newsbreak'] ) ) === 4, 'newsbreak: three articles plus the slideshow post (NewsBreak has no gallery type; it is an article there)', count( items( $xml['newsbreak'] ) ) . ' items' );
 check( strpos( $xml['yahoo'], 'Greatest Golfers' ) === false, 'yahoo: the slideshow post is not also an article' );
 
 // ── Paginated post ───────────────────────────────────────────────
