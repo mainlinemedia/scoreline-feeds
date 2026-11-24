@@ -226,7 +226,8 @@ t( 'r5 yahoo: featured photo also placed lower in the body ships once, as the le
         . '<figure><img src="https://example-brand.com/up/hero-1024x576.jpg" class="wp-image-7001"><figcaption>Body caption</figcaption></figure>',
     ], 7001 );
     expect_eq( item_image_urls( $item ), [ $hero, $other ], 'lead first, then the other photo — no URL twice' );
-    expect_not_contains( $item, 'Body caption', 'the moved copy takes its figure with it' );
+    expect_eq( substr_count( $item, 'Body caption' ), 1, 'the caption typed on the moved block travels with the photo' );
+    expect_match( $item, '#<content:encoded><!\[CDATA\[<figure><img [^>]*/><figcaption>Body caption</figcaption></figure>#', 'on the lead figure' );
 } );
 
 t( 'r5 yahoo: featured photo that is the only body image, at the bottom, becomes the lead figure', function() {

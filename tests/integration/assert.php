@@ -132,7 +132,7 @@ foreach ( $xml as $name => $body ) {
 check( strpos( $xml['aigeon'], 'FRESHBODY' ) !== false, 'aigeon: the legacy feed is not delayed' );
 check( count( items( $xml['yahoo'] ) ) === 3, 'yahoo: exactly the three eligible articles', count( items( $xml['yahoo'] ) ) . ' items' );
 check( count( items( $xml['msn'] ) ) === 3, 'msn: exactly the three eligible articles', count( items( $xml['msn'] ) ) . ' items' );
-check( count( items( $xml['newsbreak'] ) ) === 4, 'newsbreak: three articles plus the slideshow post (it has no typed feed there)', count( items( $xml['newsbreak'] ) ) . ' items' );
+check( count( items( $xml['newsbreak'] ) ) === 3, 'newsbreak: exactly the three eligible articles', count( items( $xml['newsbreak'] ) ) . ' items' );
 check( strpos( $xml['yahoo'], 'Greatest Golfers' ) === false, 'yahoo: the slideshow post is not also an article' );
 
 // ── Paginated post ───────────────────────────────────────────────
@@ -175,10 +175,23 @@ foreach ( [ 'yahoo slideshows', 'msn slideshows' ] as $n ) {
 }
 check( count( items( $xml['yahoo videos'] ) ) === 0, 'yahoo videos: empty but valid when nothing is tagged' );
 
-// ── Settle window release ────────────────────────────────────────
+// ── Settle window: a partner that polled during the hold gets the post
+//    afterwards, whichever validator it sends back. (Shortened to a few
+//    seconds here; the mechanism is identical at 60.) ──────────────────
+$held      = fetch( $feeds['yahoo'] );
+$echo_lm   = $held['headers']['last-modified'] ?? '';
+$fetched   = gmdate( 'D, d M Y H:i:s' ) . ' GMT';
+check( strpos( $held['body'], 'FRESHBODY' ) === false && $echo_lm !== '', 'yahoo: still held on a second poll, with a Last-Modified' );
+wp( "eval '\$o = get_option( \"mmgrf_options\" ); \$o[\"settle_seconds\"] = 3; update_option( \"mmgrf_options\", \$o ); mmgrf_touch_config();'" ); // a settings save
+sleep( 5 );
+$a = fetch( $feeds['yahoo'], [ 'If-Modified-Since: ' . $echo_lm ] );
+check( $a['status'] === 200 && strpos( $a['body'], 'FRESHBODY' ) !== false, 'yahoo: released post reaches a client that echoes Last-Modified', "status {$a['status']}" );
+$b = fetch( $feeds['yahoo'], [ 'If-Modified-Since: ' . $fetched ] );
+check( $b['status'] === 200 && strpos( $b['body'], 'FRESHBODY' ) !== false, 'yahoo: …and a client that sends its own fetch time', "status {$b['status']}" );
+
 wp( "eval '\$o = get_option( \"mmgrf_options\" ); \$o[\"settle_seconds\"] = 0; update_option( \"mmgrf_options\", \$o );'" );
 $r = fetch( $feeds['yahoo'] );
-check( strpos( $r['body'], 'FRESHBODY' ) !== false, 'yahoo: the held post ships once the settle window is over (the cache does not hide it)' );
+check( strpos( $r['body'], 'FRESHBODY' ) !== false, 'yahoo: the released post stays in the feed' );
 
 // ── Conditional GET. WordPress core answers these itself, before the
 //    plugin's feed callback runs — so core must be seeing our timestamps. ──

@@ -18,7 +18,7 @@
  *   body:       inline_image_below_minimum, inline_image_unresolvable,
  *               inline_image_rewritten, inline_image_duplicate,
  *               affiliate_domain_matched, affiliate_path_matched
- *   slideshows: slide_missing_image, slide_image_unresolvable,
+ *   slideshows: slide_missing_image, slide_missing_title, slide_image_unresolvable,
  *               slide_below_minimum, slide_duplicate_image,
  *               slideshow_too_few_slides, slideshow_layout_ambiguous,
  *               thumbnail_duplicates_slide

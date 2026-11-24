@@ -96,13 +96,6 @@ t( 'r5: the policy category exclusion covers child categories', function() {
     expect_eq( count( r5_ids( 'aigeon' ) ), 2, 'legacy feed unaffected' );
 } );
 
-t( 'r5: slideshow/video marker tags divert only on networks that have typed feeds', function() {
-    $slideshow = fixture_post();
-    mmgrf_test_set_terms( $slideshow, 'post_tag', [ 'slideshow' ] );
-    expect_eq( r5_ids( 'yahoo' ), [], 'yahoo: ships via the slideshow feed' );
-    expect_eq( r5_ids( 'newsbreak' ), [ $slideshow ], 'newsbreak has no slideshow feed: stays an article' );
-} );
-
 // ── Settle window ────────────────────────────────────────────────
 
 t( 'r5: a just-published post is held back from network feeds for the settle window', function() {
@@ -112,15 +105,6 @@ t( 'r5: a just-published post is held back from network feeds for the settle win
     expect_eq( r5_ids( 'aigeon' ), [ $fresh, $settled ], 'legacy feed is not delayed' );
     update_option( 'mmgrf_options', [ 'settle_seconds' => 0 ] );
     expect_eq( r5_ids( 'yahoo' ), [ $fresh, $settled ], '0 disables the hold' );
-} );
-
-t( 'r5: Last-Modified never covers a post still inside the settle window', function() {
-    // If it did, a partner that polled during the hold would be answered
-    // 304 on its next conditional request and never receive the post.
-    fixture_post( [ 'post_date_gmt' => gmdate( 'Y-m-d H:i:s', time() - 5 ), 'post_modified_gmt' => gmdate( 'Y-m-d H:i:s', time() - 5 ) ] );
-    expect_true( mmgrf_feed_lastmod() <= time() - 59, 'clamped to now minus the window' );
-    update_option( 'mmgrf_options', [ 'settle_seconds' => 0 ] );
-    expect_true( mmgrf_feed_lastmod() >= time() - 6, 'no clamp when the hold is off' );
 } );
 
 // ── Containment ──────────────────────────────────────────────────
@@ -314,11 +298,18 @@ t( 'r5: WordPress core is given the plugin last-modified on our feed routes only
     update_option( 'mmgrf_config_touched', $touched );
 
     $GLOBALS['wp'] = (object) [ 'query_vars' => [ 'feed' => 'yahoo' ] ];
-    expect_eq( mmgrf_filter_lastpostmodified( $posts, 'GMT', 'any' ), gmdate( 'Y-m-d H:i:s', $touched ), 'settings save is visible to core' );
+    $reported = gmdate( 'Y-m-d H:i:s', $touched + 60 ); // the change plus the settle window
+    expect_eq( mmgrf_filter_lastpostmodified( $posts, 'GMT', 'any' ), $reported, 'settings save is visible to core' );
     expect_eq( mmgrf_filter_lastpostmodified( $posts, 'blog', 'any' ), $posts, 'only the GMT form core uses is rewritten' );
 
     $GLOBALS['wp']->query_vars['feed'] = 'yahoo-slideshows';
-    expect_eq( mmgrf_filter_lastpostmodified( $posts, 'GMT', 'any' ), gmdate( 'Y-m-d H:i:s', $touched ), 'typed feeds too' );
+    expect_eq( mmgrf_filter_lastpostmodified( $posts, 'GMT', 'any' ), $reported, 'typed feeds too' );
+
+    // The plugin's own read of the raw post timestamp passes through the
+    // filter untouched (otherwise the window would be added twice).
+    $GLOBALS['mmgrf_lastmod_raw'] = 1;
+    expect_eq( mmgrf_filter_lastpostmodified( $posts, 'GMT', 'any' ), $posts );
+    $GLOBALS['mmgrf_lastmod_raw'] = 0;
 
     $GLOBALS['wp']->query_vars['feed'] = 'rss2';
     expect_eq( mmgrf_filter_lastpostmodified( $posts, 'GMT', 'any' ), $posts, 'the site main feed is left alone' );

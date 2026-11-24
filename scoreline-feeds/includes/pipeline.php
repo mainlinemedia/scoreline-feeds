@@ -301,21 +301,53 @@ function mmgrf_normalize_upload_url( $url ) {
     if ( $base === '' || ! is_array( $parts ) || empty( $parts['path'] ) ) {
         return '';
     }
+    // The uploads path alone proves nothing: every WordPress site has
+    // /wp-content/uploads/YYYY/MM/, and another site's photo.jpg must never
+    // be taken for ours. The host has to be one of this site's.
+    $path = $parts['path'];
+    $host = strtolower( (string) ( $parts['host'] ?? '' ) );
+    if ( $host !== '' && ! mmgrf_is_own_media_host( $host, $path, $base ) ) {
+        return '';
+    }
     $base_path = rtrim( (string) parse_url( $base, PHP_URL_PATH ), '/' );
     if ( $base_path !== '' ) {
-        // Match the uploads path wherever it sits (CDN and Photon prefix it).
-        $pos = strpos( $parts['path'], $base_path . '/' );
+        // The uploads path may sit behind a prefix (Photon puts the site
+        // host in front of it).
+        $pos = strpos( $path, $base_path . '/' );
         if ( $pos === false ) {
             return '';
         }
-        return $base . substr( $parts['path'], $pos + strlen( $base_path ) );
+        return $base . substr( $path, $pos + strlen( $base_path ) );
     }
-    // Uploads served from the web root: only a same-host URL can be ours.
-    $host = strtolower( (string) ( $parts['host'] ?? '' ) );
-    if ( $host !== '' && $host !== strtolower( (string) parse_url( $base, PHP_URL_HOST ) ) ) {
-        return '';
+    return $base . $path;
+}
+
+/**
+ * Is $host one that serves THIS site's media library? The site itself, its
+ * uploads host, their www/sub-domain forms (cdn.example.com), Jetpack Photon
+ * when it is proxying this site, or a host declared through the
+ * mmgrf_media_hosts filter (CloudFront and other off-domain CDNs).
+ */
+function mmgrf_is_own_media_host( $host, $path, $upload_base ) {
+    $own = [];
+    foreach ( [ home_url(), $upload_base ] as $u ) {
+        $h = strtolower( (string) parse_url( (string) $u, PHP_URL_HOST ) );
+        if ( $h !== '' ) {
+            $own[ $h ]                               = true;
+            $own[ preg_replace( '/^www\./', '', $h ) ] = true;
+        }
     }
-    return $base . $parts['path'];
+    foreach ( array_keys( $own ) as $o ) {
+        if ( $host === $o || substr( $host, -strlen( ".$o" ) ) === ".$o" ) {
+            return true;
+        }
+    }
+    if ( preg_match( '/^i\d\.wp\.com$/', $host ) ) {
+        $first = strtolower( (string) strtok( ltrim( $path, '/' ), '/' ) );
+        return isset( $own[ $first ] ) || isset( $own[ preg_replace( '/^www\./', '', $first ) ] );
+    }
+    $extra = array_map( 'strtolower', (array) apply_filters( 'mmgrf_media_hosts', [] ) );
+    return in_array( $host, $extra, true );
 }
 
 /**
@@ -688,11 +720,10 @@ function mmgrf_build_items( $profile, $opts, $filters ) {
         $not_tags = array_merge( $not_tags, $policy['tags'] );
         $missing  = array_merge( $missing, $policy['missing'] );
         // Slideshow and video posts ship through their typed feeds, never as
-        // articles — but only on networks that HAVE typed feeds. NewsBreak
-        // has none, so there they stay ordinary articles.
-        if ( in_array( $network, MMGRF_TYPED_NETWORKS, true ) ) {
-            $not_tags = array_merge( $not_tags, mmgrf_slideshow_marker_ids(), mmgrf_video_marker_ids() );
-        }
+        // articles. (That includes NewsBreak, which has no typed feed: it
+        // has always been withheld there, and starting to ship those posts
+        // on an update would deliver a backlog that cannot be recalled.)
+        $not_tags = array_merge( $not_tags, mmgrf_slideshow_marker_ids(), mmgrf_video_marker_ids() );
     }
     mmgrf_log_missing_exclusions( $log_label, $missing );
 
@@ -904,7 +935,7 @@ function mmgrf_cached_render( $cache_id, callable $render, $log_network = '' ) {
         return $render();
     }
     $key = 'mmgrf_feed_' . md5( (string) $cache_id );
-    $sig = mmgrf_feed_lastmod() . '|' . MMGRF_VERSION;
+    $sig = mmgrf_cache_signature();
     $ttl = max( 0, (int) apply_filters( 'mmgrf_cache_ttl', MMGRF_CACHE_TTL, $cache_id ) );
     $hit = get_transient( $key );
     $ok  = is_array( $hit ) && isset( $hit['sig'], $hit['built'], $hit['xml'] ) && is_string( $hit['xml'] ) && $hit['xml'] !== '';
@@ -944,25 +975,61 @@ function mmgrf_get_feed_output( $network, $filters = [] ) {
 }
 
 /**
- * The feed's last-modified moment, from the newest post change.
- *
- * Folded in on top of the post timestamp:
- *  - mmgrf_config_touched: settings saves, unpublish/trash transitions and
- *    media-library edits. None of those advance "last post modified" (an
- *    unpublish even moves it BACKWARDS), so without the stamp a polling
- *    partner would be answered 304 Not Modified indefinitely.
- *  - the settle window: the value never runs ahead of (now − settle). While
- *    a new post is still being held back, a client must not be handed a
- *    Last-Modified that already covers it — or its next conditional request
- *    would get a 304 and the post would never be delivered.
+ * The last moment anything feed-affecting really changed: the newest post
+ * change, or mmgrf_config_touched — settings saves, publish/unpublish
+ * transitions and media-library edits. (None of the latter advance core's
+ * "last post modified"; an unpublish even moves it BACKWARDS, so without the
+ * stamp a polling partner would be answered 304 Not Modified indefinitely.)
  */
-function mmgrf_effective_lastmod( $posts_ts ) {
-    $real = max( (int) $posts_ts, (int) get_option( 'mmgrf_config_touched', 0 ) );
-    return max( 0, min( $real, time() - mmgrf_settle_seconds() ) );
+function mmgrf_real_lastmod( $posts_ts ) {
+    return max( (int) $posts_ts, (int) get_option( 'mmgrf_config_touched', 0 ) );
+}
+
+/**
+ * The Last-Modified the feed REPORTS, which accounts for the settle window.
+ *
+ * A change at time T is only fully reflected in the feed at T + settle (a
+ * new post is held back until then). So the feed reports T + settle — and,
+ * until that moment arrives, simply "now".
+ *
+ * That makes a partner that polled during the hold safe whichever validator
+ * it sends back: one that echoes our Last-Modified (some moment before
+ * T + settle) and one that sends the time of its own last fetch (also before
+ * T + settle) are both older than T + settle, so both get a full body — with
+ * the post — on their next request, never a 304.
+ */
+function mmgrf_effective_lastmod( $posts_ts, $now = null ) {
+    $now  = $now === null ? time() : (int) $now;
+    $real = mmgrf_real_lastmod( $posts_ts );
+    return $real > 0 ? min( $real + mmgrf_settle_seconds(), $now ) : 0;
+}
+
+/** Core's newest-post-change timestamp, WITHOUT this plugin's own filter applied. */
+function mmgrf_posts_lastmod_ts() {
+    $GLOBALS['mmgrf_lastmod_raw'] = (int) ( $GLOBALS['mmgrf_lastmod_raw'] ?? 0 ) + 1;
+    try {
+        $value = get_lastpostmodified( 'GMT' );
+    } finally {
+        $GLOBALS['mmgrf_lastmod_raw']--;
+    }
+    return $value ? ( (int) strtotime( $value . ' UTC' ) ) : 0;
 }
 
 function mmgrf_feed_lastmod() {
-    return mmgrf_effective_lastmod( strtotime( get_lastpostmodified( 'GMT' ) . ' UTC' ) ?: 0 );
+    return mmgrf_effective_lastmod( mmgrf_posts_lastmod_ts() );
+}
+
+/**
+ * What a cached document is valid for: the last real change, and whether its
+ * settle window is still open (when it closes, held posts are released and
+ * the document must be rebuilt once). Deliberately NOT the reported
+ * Last-Modified, which ticks every second during the window — that would
+ * make every request in the minute after any edit a cache miss.
+ */
+function mmgrf_cache_signature( $now = null ) {
+    $now  = $now === null ? time() : (int) $now;
+    $real = mmgrf_real_lastmod( mmgrf_posts_lastmod_ts() );
+    return $real . '|' . ( $now < $real + mmgrf_settle_seconds() ? 'settling' : 'settled' ) . '|' . MMGRF_VERSION;
 }
 
 /** Record that something feed-affecting changed outside a post save. */
@@ -988,6 +1055,9 @@ function mmgrf_is_own_feed_request() {
  */
 add_filter( 'get_lastpostmodified', 'mmgrf_filter_lastpostmodified', 10, 3 );
 function mmgrf_filter_lastpostmodified( $value, $timezone = 'server', $post_type = 'any' ) {
+    if ( ! empty( $GLOBALS['mmgrf_lastmod_raw'] ) ) {
+        return $value; // our own read of the raw value
+    }
     if ( strtolower( (string) $timezone ) !== 'gmt' || ! mmgrf_is_own_feed_request() ) {
         return $value;
     }

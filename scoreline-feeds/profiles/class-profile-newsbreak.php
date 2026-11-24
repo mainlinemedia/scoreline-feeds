@@ -82,9 +82,15 @@ class MMGRF_Profile_NewsBreak extends MMGRF_Profile_Base {
                 'lead_attachment' => (int) ( $item['image']['attachment_id'] ?? 0 ),
                 'lead_url'        => (string) $item['image']['url'],
             ] );
-            $item['san']['html']         = mmgrf_prune_empty_nodes( $pass['html'] );
-            $item['san']['lead_in_body'] = $pass['lead'] === 'leading';
-            $item['inline_image_log']    = $pass['events'];
+            $item['san']['html']            = mmgrf_prune_empty_nodes( $pass['html'] );
+            $item['san']['lead_in_body']    = $pass['lead'] === 'leading';
+            $item['san']['lead_caption']    = $pass['lead_caption'];
+            $item['san']['lead_alt']        = $pass['lead_alt'];
+            // Refresh what the pass may have changed — a stale "first image"
+            // would make build_content() believe a removed lead still leads.
+            $item['san']['body_has_image']  = (bool) $pass['images'];
+            $item['san']['first_image_src'] = $pass['images'][0]['url'] ?? null;
+            $item['inline_image_log']       = $pass['events'];
         }
         return $item;
     }
@@ -174,8 +180,13 @@ class MMGRF_Profile_NewsBreak extends MMGRF_Profile_Base {
         if ( ! empty( $item['san']['lead_in_body'] ) || ( $item['san']['first_image_src'] ?? null ) === $img['url'] ) {
             return $body;
         }
-        $alt    = $img['alt'] !== '' ? $img['alt'] : $item['title'];
+        // Attachment metadata first; then what the editor typed on the block
+        // this figure was moved from; the headline as a last resort.
+        $alt    = $img['alt'] !== '' ? $img['alt'] : ( ( $item['san']['lead_alt'] ?? '' ) !== '' ? $item['san']['lead_alt'] : $item['title'] );
         $credit = $img['credit'] !== '' ? $img['credit'] : $img['caption'];
+        if ( $credit === '' ) {
+            $credit = (string) ( $item['san']['lead_caption'] ?? '' );
+        }
 
         $figure = '<figure><img src="' . mmgrf_xml( $img['url'] ) . '" alt="' . mmgrf_xml( $alt ) . '"/>';
         if ( $credit !== '' ) {

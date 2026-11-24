@@ -99,44 +99,61 @@ function mmgrf_parse_slideshow( $content ) {
         $br->parentNode->replaceChild( $doc->createTextNode( ' ' ), $br );
     }
 
-    $text_blocks = './/p | .//li | .//blockquote | .//h3 | .//h4 | .//h5 | .//h6 | .//td | .//th';
-    $nodes       = mmgrf_dom_query( $doc, $root, './/h2 | .//img | ' . $text_blocks . ' | ./text()' );
+    // Every text node is read exactly once and filed under the nearest
+    // enclosing text block, so a list item or quote that has text of its
+    // own AND nested blocks loses neither.
+    $block_tags = array_fill_keys( [ 'p', 'li', 'blockquote', 'h3', 'h4', 'h5', 'h6', 'td', 'th' ], true );
+    $nodes      = mmgrf_dom_query( $doc, $root, './/h2 | .//img | .//text()' );
 
-    $new_region = fn( $title ) => [ 'title' => $title, 'imgs' => [], 'text' => '', 'html' => '' ];
+    $new_region = fn( $title ) => [ 'title' => $title, 'imgs' => [], 'chunks' => [], 'has_text' => false ];
     $regions    = [ $new_region( '' ) ]; // region 0 is everything above the first heading
     $r          = 0;
 
     foreach ( $nodes as $node ) {
-        $tag = $node instanceof DOMElement ? strtolower( $node->tagName ) : '#text';
-        // A photo caption is the photo's caption, not slide copy.
+        // A photo caption is the photo's caption, not slide copy; a
+        // heading's own text is the slide title.
         if ( $xpath->query( 'ancestor-or-self::figcaption', $node )->length ) {
             continue;
         }
-        if ( $tag === 'h2' ) {
+        if ( $node instanceof DOMElement && strtolower( $node->tagName ) === 'h2' ) {
             $regions[] = $new_region( mmgrf_squash( $node->textContent ) );
             $r++;
             continue;
         }
-        if ( $tag === 'img' ) {
+        if ( $node instanceof DOMElement ) { // img
             $src = trim( $node->getAttribute( 'src' ) );
             if ( $src !== '' ) {
-                $regions[ $r ]['imgs'][] = [ 'src' => $src, 'alt' => mmgrf_squash( $node->getAttribute( 'alt' ) ), 'before_text' => $regions[ $r ]['text'] === '' ];
+                $regions[ $r ]['imgs'][] = [ 'src' => $src, 'alt' => mmgrf_squash( $node->getAttribute( 'alt' ) ), 'before_text' => ! $regions[ $r ]['has_text'] ];
             }
             continue;
         }
-        // Only leaf text blocks: a block that contains another block is
-        // read through its children, never twice.
-        if ( $tag !== '#text' && $xpath->query( $text_blocks, $node )->length ) {
+        if ( $xpath->query( 'ancestor::h2', $node )->length ) {
             continue;
         }
-        $text = mmgrf_squash( $node->textContent );
-        if ( $text === '' ) {
-            continue;
+        $block = $root;
+        for ( $a = $node->parentNode; $a instanceof DOMElement && $a !== $root; $a = $a->parentNode ) {
+            if ( isset( $block_tags[ strtolower( $a->tagName ) ] ) ) {
+                $block = $a;
+                break;
+            }
         }
-        $regions[ $r ]['text'] .= ( $regions[ $r ]['text'] === '' ? '' : ' ' ) . $text;
+        $key  = spl_object_id( $block );
+        $last = count( $regions[ $r ]['chunks'] ) - 1;
+        if ( $last >= 0 && $regions[ $r ]['chunks'][ $last ]['block'] === $key ) {
+            $regions[ $r ]['chunks'][ $last ]['text'] .= $node->textContent;
+        } else {
+            $regions[ $r ]['chunks'][] = [ 'block' => $key, 'text' => $node->textContent ];
+        }
+        if ( mmgrf_squash( $node->textContent ) !== '' ) {
+            $regions[ $r ]['has_text'] = true;
+        }
+    }
+    foreach ( $regions as $i => $region ) {
+        $texts = array_values( array_filter( array_map( fn( $c ) => mmgrf_squash( $c['text'] ), $region['chunks'] ), 'strlen' ) );
+        $regions[ $i ]['text'] = implode( ' ', $texts );
         // MSN's accepted gallery shape carries HTML paragraphs in the slide
         // description CDATA; keep the markup alongside the text.
-        $regions[ $r ]['html'] .= '<p>' . mmgrf_xml( $text ) . '</p>';
+        $regions[ $i ]['html'] = implode( '', array_map( fn( $t ) => '<p>' . mmgrf_xml( $t ) . '</p>', $texts ) );
     }
 
     $intro    = array_shift( $regions );
@@ -186,6 +203,10 @@ function mmgrf_parse_slideshow( $content ) {
 
     foreach ( $sections as $section ) {
         $label = '"' . mb_substr( $section['title'], 0, 60 ) . '"';
+        if ( $section['title'] === '' ) {
+            $result['events'][] = [ 'code' => 'slide_missing_title', 'detail' => 'a heading with no text (an image-only H2?) cannot be a slide title — section dropped' ];
+            continue;
+        }
         if ( ! $section['imgs'] ) {
             $result['events'][] = [ 'code' => 'slide_missing_image', 'detail' => 'section ' . $label . ' has no image — slide dropped' ];
             continue;

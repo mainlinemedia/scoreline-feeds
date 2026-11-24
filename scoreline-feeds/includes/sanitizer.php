@@ -389,7 +389,7 @@ function mmgrf_sanitize( $html, $rules ) {
         $final = isset( $rename[ $tag ] ) ? strtolower( (string) $rename[ $tag ] ) : $tag;
 
         if ( $allowed !== null && ! isset( $allowed[ $final ] ) ) {
-            mmgrf_sanitize_drop_tag( $doc, $el, $tag, $allowed );
+            mmgrf_sanitize_drop_tag( $doc, $el, $tag, $allowed, $root );
             continue;
         }
 
@@ -472,7 +472,7 @@ function mmgrf_sanitize_promote_lazy_src( DOMElement $img ) {
  *          'images'=>[['url','attachment'],…],'lead'=>null|'leading'|'moved'].
  */
 function mmgrf_process_body_images( $html, $opts = [] ) {
-    $result = [ 'html' => $html, 'events' => [], 'first_image_attachment' => 0, 'images' => [], 'lead' => null ];
+    $result = [ 'html' => $html, 'events' => [], 'first_image_attachment' => 0, 'images' => [], 'lead' => null, 'lead_caption' => '', 'lead_alt' => '' ];
     if ( trim( (string) $html ) === '' || stripos( $html, '<img' ) === false ) {
         return $result;
     }
@@ -535,11 +535,24 @@ function mmgrf_process_body_images( $html, $opts = [] ) {
         $is_lead  = ( $lead_att && $att_id === $lead_att ) || ( $lead_key !== '' && mmgrf_image_identity( $src ) === $lead_key );
 
         if ( $is_lead && $result['lead'] === null ) {
-            // "Leading" = no visible text ahead of it in the body.
+            // "Leading" = nothing visible ahead of it: no text, no other image.
             $text_before = (int) $xpath->evaluate( 'count(preceding::text()[normalize-space(translate(., "' . "\xC2\xA0" . '", " ")) != ""])', $img );
-            if ( $text_before === 0 ) {
+            if ( $text_before === 0 && ! $result['images'] ) {
                 $result['lead'] = 'leading';
             } else {
+                // Moving it to the top must not lose what the editor typed
+                // on the block: its caption/credit line and alt text live in
+                // the post body, not on the attachment.
+                $result['lead_alt'] = trim( $img->getAttribute( 'alt' ) );
+                for ( $fig = $img->parentNode; $fig instanceof DOMElement && $fig !== $root; $fig = $fig->parentNode ) {
+                    if ( strtolower( $fig->tagName ) === 'figure' ) {
+                        foreach ( $fig->getElementsByTagName( 'figcaption' ) as $cap ) {
+                            $result['lead_caption'] = trim( preg_replace( '/[\s\x{00A0}]+/u', ' ', $cap->textContent ) ?? $cap->textContent );
+                            break;
+                        }
+                        break;
+                    }
+                }
                 mmgrf_dom_remove_media( $img, $root );
                 $result['lead'] = 'moved';
                 continue;
@@ -839,11 +852,22 @@ function mmgrf_dom_is_inline_content( $node ) {
  * under-count words for the body floor. A block that only wraps other blocks
  * is unwrapped, with a space where its edges would otherwise touch text.
  */
-function mmgrf_sanitize_drop_tag( DOMDocument $doc, DOMElement $el, $tag, $allowed ) {
+function mmgrf_sanitize_drop_tag( DOMDocument $doc, DOMElement $el, $tag, $allowed, $root = null ) {
     $blocks = mmgrf_sanitize_block_tags();
     if ( $tag !== 'caption' && ! isset( $blocks[ $tag ] ) ) {
         mmgrf_sanitize_unwrap( $el );
         return;
+    }
+    // A paragraph cannot live inside a heading, another paragraph, or an
+    // inline element (a block-level link, a span): there the block is just
+    // unwrapped — "<h2><div>Title</div></h2>" must stay a heading.
+    $phrasing_parent = false;
+    for ( $a = $el->parentNode; $a instanceof DOMElement && $a !== $root; $a = $a->parentNode ) {
+        $at = strtolower( $a->tagName );
+        if ( $at === 'p' || preg_match( '/^h[1-6]$/', $at ) || ! isset( $blocks[ $at ] ) ) {
+            $phrasing_parent = true;
+            break;
+        }
     }
 
     $has_block_child = false;
@@ -855,7 +879,7 @@ function mmgrf_sanitize_drop_tag( DOMDocument $doc, DOMElement $el, $tag, $allow
     }
     $has_text = trim( str_replace( "\xC2\xA0", ' ', $el->textContent ) ) !== '';
 
-    if ( $has_text && ! $has_block_child && isset( $allowed['p'] ) ) {
+    if ( $has_text && ! $has_block_child && ! $phrasing_parent && isset( $allowed['p'] ) ) {
         $p = $doc->createElement( 'p' );
         while ( $el->firstChild ) {
             $p->appendChild( $el->firstChild );

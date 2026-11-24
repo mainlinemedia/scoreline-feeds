@@ -132,6 +132,8 @@ class MMGRF_Profile_Yahoo extends MMGRF_Profile_Base {
         $item['san']['html']                   = $html;
         $item['san']['first_image_attachment'] = $pass['first_image_attachment'];
         $item['san']['lead_in_body']           = $pass['lead'] === 'leading';
+        $item['san']['lead_caption']           = $pass['lead_caption'];
+        $item['san']['lead_alt']               = $pass['lead_alt'];
         $item['san']['body_has_image']         = (bool) $pass['images'];
         $item['san']['first_image_src']        = $pass['images'][0]['url'] ?? null;
         // The body floor is judged on what actually ships — the passes above
@@ -194,8 +196,14 @@ class MMGRF_Profile_Yahoo extends MMGRF_Profile_Base {
         if ( $img && ! $already_leads ) {
             // Preferred method: lead image as the FIRST element of content:encoded,
             // figure-wrapped with alt + caption (the only method that carries one).
-            $figure = '<figure><img src="' . mmgrf_xml( $img['url'] ) . '" alt="' . mmgrf_xml( $img['alt'] !== '' ? $img['alt'] : $item['title'] ) . '"/>';
+            // Attachment metadata first; then what the editor typed on the
+            // block this figure was moved from; the headline as a last resort.
+            $alt    = $img['alt'] !== '' ? $img['alt'] : ( ( $item['san']['lead_alt'] ?? '' ) !== '' ? $item['san']['lead_alt'] : $item['title'] );
+            $figure = '<figure><img src="' . mmgrf_xml( $img['url'] ) . '" alt="' . mmgrf_xml( $alt ) . '"/>';
             $credit = $img['credit'] !== '' ? $img['credit'] : $img['caption'];
+            if ( $credit === '' ) {
+                $credit = (string) ( $item['san']['lead_caption'] ?? '' );
+            }
             if ( $credit !== '' ) {
                 $figure .= '<figcaption>' . mmgrf_xml( $credit ) . '</figcaption>';
             }

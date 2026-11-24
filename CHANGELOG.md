@@ -46,7 +46,9 @@ against 3.5.3.
 - **Duplicate photos (Yahoo).** The featured image placed lower in the body,
   the same photo inserted twice, renditions of large ("-scaled") uploads and
   CDN/Photon URLs could all still list one photo twice in an item. Each photo
-  now ships exactly once and the lead figure is always the first element.
+  now ships exactly once and the lead figure is always the first element
+  (a featured photo found lower in the body is moved to the top, keeping the
+  caption and alt text typed on its block).
 - **Fused words and sentences.** Unwrapped blocks ran sentences together
   ("…ends here.Second…") and whitespace-only spans from Google Docs pastes
   joined words. Fixed, and the Yahoo 150-word floor is now measured on the
@@ -92,11 +94,15 @@ against 3.5.3.
   `If-Modified-Since` itself before the plugin runs; a settings change, an
   unpublished post or a media-library edit (including a rights takedown) was
   therefore answered "304 Not Modified" until the next post was published.
+  A partner that polls while a post is in its settle window receives it on
+  its next request whether it echoes `Last-Modified` or sends its own fetch
+  time.
 - A server missing the DOM or mbstring extension answers 503 instead of a
   broken or empty feed.
 - Inline images of large uploads now resolve to their attachment (WordPress
   stores them as `-scaled`), from the `wp-image-{id}` class where present —
-  which also removes most database lookups from every render.
+  which also removes most database lookups from every render. Images served
+  from an off-domain CDN can be declared with the `mmgrf_media_hosts` filter.
 
 ### Performance
 
@@ -126,6 +132,8 @@ against 3.5.3.
 
 ### Deliberately unchanged
 
+- NewsBreak still withholds posts carrying the slideshow or video marker tag
+  (it has no typed feed; shipping them as articles is a separate decision).
 - GUIDs remain the permalink. (Editing a slug after publish still makes
   partners see a new article; freezing the GUID is a separate decision.)
 - The syndication-rights flag still applies to MSN only.
